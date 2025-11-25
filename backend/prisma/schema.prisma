@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// 商家
+model Merchant {
+  id           String         @id @default(uuid())
+  username     String         @unique
+  passwordHash String         @map("password_hash")
+  name         String?
+  phone        String?
+  address      Json?          // 默认发货地址 { lng, lat, address }
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  orders       Order[]
+  deliveryZones DeliveryZone[]
+
+  @@map("merchants")
+}
+
+// 订单状态枚举
+enum OrderStatus {
+  PENDING   // 待发货
+  SHIPPING  // 运输中
+  DELIVERED // 已送达
+  CANCELLED // 已取消
+}
+
+// 订单
+model Order {
+  id              String      @id @default(uuid())
+  orderNo         String      @unique
+  status          OrderStatus @default(PENDING)
+  merchantId      String      @map("merchant_id")
+  // 收货人信息
+  receiverName    String      @map("receiver_name")
+  receiverPhone   String      @map("receiver_phone")
+  receiverAddress String      @map("receiver_address")
+  // 商品信息
+  productName     String      @map("product_name")
+  productQuantity Int         @map("product_quantity")
+  amount          Float
+  // 地理位置 (存储为 JSON)
+  origin          Json        // { lng, lat, address }
+  destination     Json        // { lng, lat, address }
+  currentLocation Json?       @map("current_location") // { lng, lat }
+  // 时效信息
+  estimatedTime   DateTime?   @map("estimated_time") // 预计送达时间
+  actualTime      DateTime?   @map("actual_time") // 实际送达时间
+  // 物流公司
+  logistics       String      @default("顺丰速运")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  merchant Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  route    Route?
+  timeline LogisticsTimeline[]
+
+  @@map("orders")
+}
+
+// 配送区域
+model DeliveryZone {
+  id         String   @id @default(uuid())
+  name       String
+  merchantId String   @map("merchant_id")
+  // 多边形边界 (存储为 GeoJSON)
+  boundary   Json     // { type: "Polygon", coordinates: [[[lng, lat], ...]] }
+  // 配送时效 (小时)
+  timeLimit  Int      @default(24) @map("time_limit")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_zones")
+}
+
+// 轨迹缓存
+model Route {
+  id          String   @id @default(uuid())
+  orderId     String   @unique @map("order_id")
+  // 路径点数组 (存储为 JSON)
+  points      Json     // [[lng, lat], [lng, lat], ...]
+  // 当前步骤索引
+  currentStep Int      @default(0) @map("current_step")
+  // 总步数
+  totalSteps  Int      @map("total_steps")
+  // 每步间隔 (毫秒)
+  interval    Int      @default(5000)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("routes")
+}
+
+// 物流时间线
+model LogisticsTimeline {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  status      String   // 状态描述，如 "已揽收"、"运输中"、"派送中"、"已签收"
+  description String   // 详细描述
+  location    String?  // 位置信息
+  timestamp   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("logistics_timeline")
+}
+
+// 物流公司
+model LogisticsCompany {
+  id        String   @id @default(uuid())
+  name      String   @unique  // 物流公司名称，如 "顺丰速运"
+  timeLimit Int                // 配送时效 (小时)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("logistics_companies")
+}
