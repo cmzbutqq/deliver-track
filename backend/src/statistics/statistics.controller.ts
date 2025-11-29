@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StatisticsService } from './statistics.service';
 
@@ -12,8 +12,8 @@ export class StatisticsController {
    * GET /statistics/overview?date=2025-11-22
    */
   @Get('overview')
-  async getOverview(@Query('date') date?: string) {
-    const data = await this.statisticsService.getOverview(date);
+  async getOverview(@Request() req, @Query('date') date?: string) {
+    const data = await this.statisticsService.getOverview(req.user.userId, date);
     return { success: true, data };
   }
 
@@ -22,8 +22,8 @@ export class StatisticsController {
    * GET /statistics/zones
    */
   @Get('zones')
-  async getZoneStatistics() {
-    const data = await this.statisticsService.getZoneStatistics();
+  async getZoneStatistics(@Request() req) {
+    const data = await this.statisticsService.getZoneStatistics(req.user.userId);
     return { success: true, data };
   }
 
@@ -32,8 +32,8 @@ export class StatisticsController {
    * GET /statistics/logistics
    */
   @Get('logistics')
-  async getLogisticsStatistics() {
-    const data = await this.statisticsService.getLogisticsStatistics();
+  async getLogisticsStatistics(@Request() req) {
+    const data = await this.statisticsService.getLogisticsStatistics(req.user.userId);
     return { success: true, data };
   }
 }

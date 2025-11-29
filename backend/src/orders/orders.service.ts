@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef 
 import { PrismaService } from '../prisma/prisma.service';
 import { OrderStatus } from '@prisma/client';
 import { CreateOrderDto, UpdateOrderDto, ShipOrderDto } from './dto/order.dto';
-import { AmapService } from './services/amap.service';
+import { RouteQueueService } from './services/route-queue.service';
 import { LogisticsCompaniesService } from '../logistics-companies/logistics-companies.service';
 import { TrackingGateway } from '../tracking/tracking.gateway';
 
@@ -10,7 +10,7 @@ import { TrackingGateway } from '../tracking/tracking.gateway';
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
-    private amapService: AmapService,
+    private routeQueueService: RouteQueueService,
     private logisticsCompaniesService: LogisticsCompaniesService,
     @Inject(forwardRef(() => TrackingGateway))
     private trackingGateway: TrackingGateway,
@@ -174,21 +174,29 @@ export class OrdersService {
     const origin = order.origin as any;
     const destination = order.destination as any;
 
-    let routePoints = [];
-    try {
-      // 尝试使用高德地图 API 获取路径
-      routePoints = await this.amapService.getRoute(
-        `${origin.lng},${origin.lat}`,
-        `${destination.lng},${destination.lat}`,
-      );
-    } catch (error) {
-      console.error('获取路径失败，使用直线插值:', error.message);
-      // 降级策略：使用直线插值
-      routePoints = this.interpolateRoute(
-        [origin.lng, origin.lat],
-        [destination.lng, destination.lat],
-        20,
-      );
+    // 验证 origin 坐标有效性
+    if (!origin || typeof origin.lng !== 'number' || typeof origin.lat !== 'number' ||
+        isNaN(origin.lng) || isNaN(origin.lat) ||
+        !isFinite(origin.lng) || !isFinite(origin.lat)) {
+      throw new BadRequestException(`订单起点坐标无效: ${JSON.stringify(origin)}`);
+    }
+
+    // 验证 destination 坐标有效性
+    if (!destination || typeof destination.lng !== 'number' || typeof destination.lat !== 'number' ||
+        isNaN(destination.lng) || isNaN(destination.lat) ||
+        !isFinite(destination.lng) || !isFinite(destination.lat)) {
+      throw new BadRequestException(`订单终点坐标无效: ${JSON.stringify(destination)}`);
+    }
+
+    // 使用路径队列服务获取路径（带限流和重试）
+    const routePoints = await this.routeQueueService.getRoute(
+      [origin.lng, origin.lat],
+      [destination.lng, destination.lat],
+    );
+
+    // 验证 routePoints 有效性
+    if (!Array.isArray(routePoints) || routePoints.length === 0) {
+      throw new BadRequestException(`路径点数组无效: ${JSON.stringify(routePoints)}`);
     }
 
     // 计算预计送达时间（假设平均速度 40km/h）
@@ -196,7 +204,7 @@ export class OrdersService {
     const estimatedHours = distance / 40;
     const estimatedTime = new Date(Date.now() + estimatedHours * 60 * 60 * 1000);
 
-    // 更新订单状态并创建路径
+    // 更新订单状态并创建路径（origin 已验证，可以安全使用）
     const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
@@ -225,6 +233,13 @@ export class OrdersService {
         description: '快递已从发货地揽收',
         location: origin.address,
       },
+    });
+
+    // 广播状态更新（订单已发货）
+    this.trackingGateway.broadcastStatusUpdate(updatedOrder.orderNo, {
+      orderNo: updatedOrder.orderNo,
+      status: OrderStatus.SHIPPING,
+      message: '订单已发货，正在运输中',
     });
 
     // 返回订单和路径信息
@@ -286,6 +301,39 @@ export class OrdersService {
     return this.prisma.order.delete({ where: { id } });
   }
 
+  /**
+   * 获取最近的活动历史（物流时间线）
+   */
+  async getRecentActivities(merchantId: string, limit: number = 100) {
+    // 获取该商家的所有订单ID
+    const orders = await this.prisma.order.findMany({
+      where: { merchantId },
+      select: { id: true },
+    });
+    const orderIds = orders.map((o) => o.id);
+
+    // 获取最近的活动历史
+    const activities = await this.prisma.logisticsTimeline.findMany({
+      where: {
+        orderId: { in: orderIds },
+      },
+      include: {
+        order: {
+          select: {
+            orderNo: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: {
+        timestamp: 'desc',
+      },
+      take: limit,
+    });
+
+    return activities;
+  }
+
   private generateOrderNo(): string {
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 10000)
@@ -295,11 +343,39 @@ export class OrdersService {
   }
 
   private interpolateRoute(start: number[], end: number[], steps: number): number[][] {
+    // 验证输入参数
+    if (!Array.isArray(start) || start.length < 2 || !Array.isArray(end) || end.length < 2) {
+      throw new Error(`插值路径参数无效: start=${JSON.stringify(start)}, end=${JSON.stringify(end)}`);
+    }
+
+    const startLng = start[0];
+    const startLat = start[1];
+    const endLng = end[0];
+    const endLat = end[1];
+
+    // 验证坐标有效性
+    if (typeof startLng !== 'number' || typeof startLat !== 'number' ||
+        typeof endLng !== 'number' || typeof endLat !== 'number' ||
+        isNaN(startLng) || isNaN(startLat) || isNaN(endLng) || isNaN(endLat) ||
+        !isFinite(startLng) || !isFinite(startLat) || !isFinite(endLng) || !isFinite(endLat)) {
+      throw new Error(`插值路径坐标无效: start=[${startLng}, ${startLat}], end=[${endLng}, ${endLat}]`);
+    }
+
+    if (typeof steps !== 'number' || isNaN(steps) || steps <= 0 || !isFinite(steps)) {
+      throw new Error(`插值路径步数无效: steps=${steps}`);
+    }
+
     const points: number[][] = [];
     for (let i = 0; i <= steps; i++) {
       const ratio = i / steps;
-      const lng = start[0] + (end[0] - start[0]) * ratio;
-      const lat = start[1] + (end[1] - start[1]) * ratio;
+      const lng = startLng + (endLng - startLng) * ratio;
+      const lat = startLat + (endLat - startLat) * ratio;
+      
+      // 验证计算结果
+      if (isNaN(lng) || isNaN(lat) || !isFinite(lng) || !isFinite(lat)) {
+        throw new Error(`插值计算失败: 步骤 ${i}, ratio=${ratio}, 结果=[${lng}, ${lat}]`);
+      }
+      
       points.push([lng, lat]);
     }
     return points;

@@ -1,46 +1,39 @@
-# 前端项目
+# 前端应用
 
-电商物流配送可视化平台 - 前端应用
+电商物流配送可视化平台前端应用，基于 React + TypeScript + Vite 构建。
 
 ## 技术栈
 
-- React 18 + TypeScript
-- Vite
-- Ant Design
-- React Router v6
-- Zustand (状态管理)
-- Socket.io-client (实时通信)
-- 高德地图 JS API
-- ECharts (数据可视化)
+- **框架**: React 18 + TypeScript
+- **构建工具**: Vite
+- **UI 组件库**: Ant Design
+- **状态管理**: Zustand
+- **路由**: React Router v6
+- **地图**: 高德地图 JS API v2.0
+- **图表**: ECharts
+- **实时通信**: Socket.io-client
+- **HTTP 客户端**: Axios
 
 ## 快速开始
 
-### 1. 安装依赖
+### 安装依赖
 
 ```bash
+cd frontend
 pnpm install
 ```
 
-### 2. 配置环境变量
+### 配置环境变量
 
 复制 `.env.example` 为 `.env` 并填写配置：
 
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件：
-
 ```env
-# API 配置
 VITE_API_URL=http://localhost:3000
-
-# 高德地图配置（JS API - 前端使用）
 VITE_AMAP_KEY=your-amap-js-api-key
 VITE_AMAP_SECURITY_JSCODE=your-amap-security-jscode
 ```
 
-### 3. 启动开发服务器
+### 启动开发服务器
 
 ```bash
 pnpm dev
@@ -48,52 +41,83 @@ pnpm dev
 
 前端将在 `http://localhost:5173` 启动。
 
-### 4. 构建生产版本
-
-```bash
-pnpm build
-```
-
 ## 项目结构
 
 ```
-src/
-├── pages/           # 页面组件
-│   ├── merchant/    # 商家端页面
-│   └── track/       # 用户端页面
-├── components/      # 通用组件
-├── stores/          # Zustand 状态管理
-├── services/        # API 服务封装
-├── utils/           # 工具函数
-└── types/           # TypeScript 类型定义
+frontend/
+├── src/
+│   ├── pages/          # 页面组件
+│   │   ├── merchant/   # 商家端页面
+│   │   └── track/     # 用户端页面
+│   ├── components/     # 组件
+│   │   ├── common/    # 通用组件
+│   │   ├── layout/    # 布局组件
+│   │   ├── map/      # 地图组件
+│   │   ├── merchant/  # 商家端组件
+│   │   └── track/     # 用户端组件
+│   ├── services/       # API 服务
+│   ├── stores/         # 状态管理
+│   ├── hooks/          # 自定义 Hooks
+│   ├── utils/          # 工具函数
+│   ├── types/          # TypeScript 类型
+│   └── router/         # 路由配置
+├── public/             # 静态资源
+└── package.json
 ```
 
-## 路由说明
+## 功能特性
 
-### 商家端（需登录）
-- `/merchant/login` - 登录页
+### 商家端
+- ✅ 登录/注册
+- ✅ 数据看板（统计卡片、ECharts 图表、热力图）
+- ✅ 订单管理（列表、创建、批量操作）
+- ✅ 配送区域管理（地图绘制编辑）
+- ✅ 实时数据更新（WebSocket）
+
+### 用户端
+- ✅ 物流查询（订单号输入）
+- ✅ 实时追踪（地图动画、时间轴）
+- ✅ WebSocket 断线重连
+
+## 开发说明
+
+### 路由结构
+
+- `/merchant/login` - 商家登录
 - `/merchant/dashboard` - 数据看板
 - `/merchant/orders` - 订单列表
 - `/merchant/orders/new` - 创建订单
 - `/merchant/zones` - 配送区域管理
+- `/track` - 物流查询
+- `/track/:orderNo` - 实时追踪
 
-### 用户端（公开）
-- `/track` - 物流查询页
-- `/track/:orderNo` - 实时追踪页
+### 状态管理
 
-## 开发进度
+使用 Zustand 管理全局状态：
+- `authStore` - 认证状态
+- `themeStore` - 主题状态
 
-- ✅ 项目初始化
-- ✅ 基础架构（路由、API、状态管理）
-- ✅ 商家端核心页面（登录、订单列表、创建订单）
-- ✅ 用户端核心页面（查询、追踪）
-- ⏳ 地图功能（高德地图集成）
-- ⏳ 数据看板（ECharts 图表）
-- ⏳ 配送区域管理（地图绘制）
-- ⏳ 实时追踪（WebSocket + 动画）
+### API 服务
 
-## 注意事项
+所有 API 请求通过 `services/api.ts` 统一封装，自动处理 JWT Token 和错误。
 
-1. 确保后端服务已启动（`http://localhost:3000`）
-2. 高德地图 JS API Key 需要单独申请（与后端 Web Service API Key 不同）
-3. 前端使用 JS API，需要配置安全密钥（Jscode）
+### 地图功能
+
+高德地图相关功能：
+- 地图组件封装 (`components/map/MapComponent`)
+- 订单列表地图 (`components/map/OrderListMap`)
+- 实时追踪地图 (`components/track/TrackingMap`)
+- 配送区域编辑器 (`components/merchant/ZoneEditor`)
+
+## 构建部署
+
+```bash
+# 构建生产版本
+pnpm build
+
+# 预览构建结果
+pnpm preview
+```
+
+构建产物在 `dist/` 目录。
+

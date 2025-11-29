@@ -80,9 +80,13 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /**
    * 广播订单状态更新
+   * 同时发送给订阅了该订单的房间和所有连接的客户端（用于数据看板）
    */
   broadcastStatusUpdate(orderNo: string, data: any) {
+    // 发送给订阅了该订单的房间（用于实时追踪页面）
     this.server.to(orderNo).emit('status_update', data);
+    // 同时广播给所有连接的客户端（用于数据看板）
+    this.server.emit('status_update', data);
   }
 
   /**
@@ -90,6 +94,51 @@ export class TrackingGateway implements OnGatewayConnection, OnGatewayDisconnect
    */
   broadcastDeliveryComplete(orderNo: string, data: any) {
     this.server.to(orderNo).emit('delivery_complete', data);
+  }
+
+  /**
+   * 接收浏览器控制台日志并输出到后端控制台
+   */
+  @SubscribeMessage('console_log')
+  handleConsoleLog(client: Socket, data: { level: string; args: string[]; timestamp: string }) {
+    const { level, args, timestamp } = data;
+    const timeStr = new Date(timestamp).toLocaleTimeString('zh-CN', { 
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      fractionalSecondDigits: 3,
+    });
+    const clientId = client.id.substring(0, 8);
+    
+    // 将字符串数组转换回原始格式（尝试解析 JSON）
+    const parsedArgs = args.map(arg => {
+      try {
+        // 尝试解析 JSON
+        return JSON.parse(arg);
+      } catch {
+        // 如果不是 JSON，返回原字符串
+        return arg;
+      }
+    });
+    
+    // 根据日志级别输出到后端控制台，格式与浏览器控制台保持一致
+    switch (level) {
+      case 'error':
+        console.error(`[${timeStr}] [浏览器 ${clientId}]`, ...parsedArgs);
+        break;
+      case 'warn':
+        console.warn(`[${timeStr}] [浏览器 ${clientId}]`, ...parsedArgs);
+        break;
+      case 'info':
+        console.info(`[${timeStr}] [浏览器 ${clientId}]`, ...parsedArgs);
+        break;
+      case 'debug':
+        console.debug(`[${timeStr}] [浏览器 ${clientId}]`, ...parsedArgs);
+        break;
+      default:
+        console.log(`[${timeStr}] [浏览器 ${clientId}]`, ...parsedArgs);
+    }
   }
 }
 

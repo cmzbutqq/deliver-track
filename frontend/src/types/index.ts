@@ -1,170 +1,179 @@
-// 订单状态
-export type OrderStatus = 'PENDING' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED';
+// 订单状态枚举
+export enum OrderStatus {
+  PENDING = 'PENDING',
+  SHIPPING = 'SHIPPING',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}
 
-// 地理位置
+// 地理位置类型
 export interface Location {
-  lng: number;
-  lat: number;
-  address?: string;
+  lng: number
+  lat: number
+  address: string
 }
 
-// 商家
-export interface Merchant {
-  id: string;
-  username: string;
-  name: string;
-  phone: string;
-  address?: Location;
-}
-
-// 订单
+// 订单类型
 export interface Order {
-  id: string;
-  orderNo: string;
-  status: OrderStatus;
-  merchantId: string;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
-  productName: string;
-  productQuantity: number;
-  amount: number;
-  logistics: string;
-  origin: Location;
-  destination: Location;
-  currentLocation?: Location;
-  estimatedTime: string;
-  actualTime?: string;
-  createdAt: string;
-  updatedAt: string;
-  route?: Route;
+  id: string
+  orderNo: string
+  status: OrderStatus
+  merchantId: string
+  receiverName: string
+  receiverPhone: string
+  receiverAddress: string
+  productName: string
+  productQuantity: number
+  amount: number
+  origin: Location
+  destination: Location
+  currentLocation?: Location
+  estimatedTime?: string
+  actualTime?: string
+  logistics: string
+  createdAt: string
+  updatedAt: string
+  route?: Route
+  timeline?: LogisticsTimeline[]
+  merchant?: {
+    id: string
+    name: string
+    phone: string
+  }
 }
 
-// 路径
+// 路径类型
 export interface Route {
-  id: string;
-  orderId: string;
-  points: number[][]; // [[lng, lat], ...]
-  currentStep: number;
-  totalSteps: number;
-  interval: number;
+  id: string
+  orderId: string
+  points: number[][] // [[lng, lat], ...]
+  currentStep: number
+  totalSteps: number
+  interval: number
 }
 
-// 物流时间线
+// 物流时间线类型
 export interface LogisticsTimeline {
-  id: string;
-  orderId: string;
-  status: string;
-  description: string;
-  location?: Location;
-  timestamp: string;
+  id: string
+  orderId: string
+  status: string
+  description: string
+  location?: string
+  timestamp: string
 }
 
-// 配送区域
+// 商家类型
+export interface Merchant {
+  id: string
+  username: string
+  name?: string
+  phone?: string
+  address?: Location
+  createdAt: string
+  updatedAt: string
+}
+
+// 配送区域类型
 export interface DeliveryZone {
-  id: string;
-  name: string;
-  merchantId: string;
+  id: string
+  name: string
+  merchantId: string
   boundary: {
-    type: 'Polygon';
-    coordinates: number[][][];
-  };
-  timeLimit: number;
-  createdAt: string;
-  updatedAt: string;
+    type: 'Polygon'
+    coordinates: number[][][]
+  }
+  timeLimit: number
+  createdAt: string
+  updatedAt: string
 }
 
-// 物流公司
+// 物流公司类型
 export interface LogisticsCompany {
-  id: string;
-  name: string;
-  timeLimit: number;
+  id: string
+  name: string
+  timeLimit: number
+  createdAt: string
+  updatedAt: string
 }
 
-// 创建订单 DTO
-export interface CreateOrderDto {
-  logistics: string;
-  receiverName: string;
-  receiverPhone: string;
-  receiverAddress: string;
-  destination: Location;
-  productName: string;
-  productQuantity: number;
-  amount: number;
-  origin?: Location;
+// API 响应类型
+export interface ApiResponse<T = any> {
+  success?: boolean
+  data?: T
+  message?: string
 }
 
-// 更新订单 DTO
-export interface UpdateOrderDto {
-  receiverName?: string;
-  receiverPhone?: string;
-  receiverAddress?: string;
-  destination?: Location;
-  productName?: string;
-  productQuantity?: number;
-  amount?: number;
+// 登录请求类型
+export interface LoginRequest {
+  username: string
+  password: string
 }
 
-// 登录 DTO
-export interface LoginDto {
-  username: string;
-  password: string;
-}
-
-// 注册 DTO
-export interface RegisterDto {
-  username: string;
-  password: string;
-  name: string;
-  phone: string;
-}
-
-// 登录响应
+// 登录响应类型
 export interface LoginResponse {
-  access_token: string;
-  merchant: Merchant;
+  access_token: string
+  user: {
+    id: string
+    username: string
+    name?: string
+  }
 }
 
-// 统计数据
-export interface StatisticsOverview {
-  todayOrders: number;
-  shippingOrders: number;
-  completedOrders: number;
-  todayAmount: number;
+// 创建订单请求类型
+export interface CreateOrderRequest {
+  receiverName: string
+  receiverPhone: string
+  receiverAddress: string
+  productName: string
+  productQuantity: number
+  amount: number
+  destination: Location
+  origin?: Location
+  logistics?: string
+}
+
+// WebSocket 事件类型
+export interface LocationUpdateEvent {
+  orderNo: string
+  location: {
+    lng: number
+    lat: number
+  }
+  progress: number
+  status?: OrderStatus
+  estimatedTime?: string
+}
+
+export interface StatusUpdateEvent {
+  orderNo: string
+  status: OrderStatus
+  message: string
+}
+
+export interface DeliveryCompleteEvent {
+  orderNo: string
+  status: OrderStatus
+  actualTime: string
+}
+
+// 统计数据类型
+export interface OverviewStatistics {
+  todayOrders: number
+  todayAmount: number
+  shippingOrders: number
+  completedOrders: number
 }
 
 export interface ZoneStatistics {
-  zoneId: string;
-  zoneName: string;
-  orderCount: number;
-  avgDeliveryTime: number;
+  zoneName: string
+  orderCount: number
+  avgDeliveryTime: number
 }
 
 export interface LogisticsStatistics {
-  companyId: string;
-  companyName: string;
-  orderCount: number;
-  avgDeliveryTime: number;
-  onTimeRate: number;
-}
-
-// WebSocket 事件
-export interface LocationUpdate {
-  orderNo: string;
-  location: Location;
-  progress: number;
-  estimatedTime: string;
-}
-
-export interface StatusUpdate {
-  orderNo: string;
-  status: OrderStatus;
-  description: string;
-}
-
-export interface DeliveryComplete {
-  orderNo: string;
-  status: OrderStatus;
-  actualTime: string;
+  companyName: string
+  orderCount: number
+  avgDeliveryTime: number
+  onTimeRate: number
 }
 

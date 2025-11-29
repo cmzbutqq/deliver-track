@@ -43,10 +43,34 @@ export class AmapService {
         if (step.polyline) {
           const polylinePoints = step.polyline.split(';');
           for (const point of polylinePoints) {
-            const [lng, lat] = point.split(',').map(Number);
+            if (!point || point.trim() === '') {
+              continue; // 跳过空字符串
+            }
+            const parts = point.split(',');
+            if (parts.length !== 2) {
+              throw new Error(`路径点格式错误: "${point}". 期望格式: "lng,lat"`);
+            }
+            const lng = Number(parts[0]);
+            const lat = Number(parts[1]);
+            
+            // 验证坐标有效性
+            if (isNaN(lng) || isNaN(lat) || !isFinite(lng) || !isFinite(lat)) {
+              throw new Error(`路径点坐标无效: "${point}". 解析结果: lng=${lng}, lat=${lat}`);
+            }
+            
+            // 验证坐标范围（中国大致范围：经度 73-135，纬度 18-54）
+            if (lng < 73 || lng > 135 || lat < 18 || lat > 54) {
+              throw new Error(`路径点坐标超出中国范围: lng=${lng}, lat=${lat}. 原始点: "${point}"`);
+            }
+            
             points.push([lng, lat]);
           }
         }
+      }
+      
+      // 验证至少有一个有效点
+      if (points.length === 0) {
+        throw new Error('未找到有效的路径点');
       }
 
       // 如果点太多，进行采样（保留每 N 个点）

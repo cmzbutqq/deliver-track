@@ -1,0 +1,50 @@
+.merchant-layout {
+  min-height: 100vh;
+}
+
+.merchant-sider {
+  background: #001529;
+}
+
+.logo {
+  height: 64px;
+  line-height: 64px;
+  text-align: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.merchant-header {
+  background: #fff;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.merchant-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.merchant-content {
+  margin: 24px;
+  padding: 24px;
+  background: #fff;
+  min-height: calc(100vh - 112px);
+}
+

@@ -92,4 +92,18 @@ export class OrdersController {
   async delete(@Param('id') id: string, @Request() req) {
     return this.ordersService.delete(id, req.user.userId);
   }
+
+  @Get('activities/recent')
+  @UseGuards(JwtAuthGuard)
+  async getRecentActivities(@Request() req, @Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    const activities = await this.ordersService.getRecentActivities(
+      req.user.userId,
+      limitNum,
+    );
+    return {
+      success: true,
+      data: activities,
+    };
+  }
 }

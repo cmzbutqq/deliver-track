@@ -51,16 +51,51 @@ export class SimulatorService implements OnModuleInit {
     const points = route.points as number[][];
     const currentStep = route.currentStep;
 
+    // 验证 points 数组有效性
+    if (!Array.isArray(points) || points.length === 0) {
+      console.error(`订单 ${orderNo} 的路径点数组无效: points=${JSON.stringify(points)}`);
+      return;
+    }
+
+    // 验证 currentStep 有效性
+    if (typeof currentStep !== 'number' || isNaN(currentStep) || currentStep < 0) {
+      console.error(`订单 ${orderNo} 的当前步骤无效: currentStep=${currentStep}`);
+      return;
+    }
+
     // 如果已到达终点
     if (currentStep >= points.length - 1) {
       await this.completeDelivery(orderId, orderNo);
       return;
     }
 
+    // 验证当前步骤的点是否存在
+    if (!points[currentStep] || !Array.isArray(points[currentStep]) || points[currentStep].length < 2) {
+      console.error(`订单 ${orderNo} 的路径点 ${currentStep} 无效: ${JSON.stringify(points[currentStep])}`);
+      return;
+    }
+
+    const lng = points[currentStep][0];
+    const lat = points[currentStep][1];
+
+    // 验证坐标有效性
+    if (typeof lng !== 'number' || typeof lat !== 'number' ||
+        isNaN(lng) || isNaN(lat) ||
+        !isFinite(lng) || !isFinite(lat)) {
+      console.error(`订单 ${orderNo} 的路径点 ${currentStep} 坐标无效: lng=${lng} (${typeof lng}), lat=${lat} (${typeof lat})`);
+      return;
+    }
+
+    // 验证坐标范围（中国大致范围：经度 73-135，纬度 18-54）
+    if (lng < 73 || lng > 135 || lat < 18 || lat > 54) {
+      console.error(`订单 ${orderNo} 的路径点 ${currentStep} 坐标超出中国范围: lng=${lng}, lat=${lat}`);
+      return;
+    }
+
     // 获取当前位置
     const currentLocation = {
-      lng: points[currentStep][0],
-      lat: points[currentStep][1],
+      lng,
+      lat,
     };
 
     // 更新订单当前位置
@@ -115,6 +150,14 @@ export class SimulatorService implements OnModuleInit {
     }
 
     const destination = order.destination as any;
+
+    // 验证目的地坐标有效性
+    if (!destination || typeof destination.lng !== 'number' || typeof destination.lat !== 'number' ||
+        isNaN(destination.lng) || isNaN(destination.lat) ||
+        !isFinite(destination.lng) || !isFinite(destination.lat)) {
+      console.error(`订单 ${orderNo} 的目的地坐标无效: ${JSON.stringify(destination)}`);
+      return;
+    }
 
     // 更新订单状态
     await this.prisma.order.update({

@@ -1,7 +1,374 @@
 import { PrismaClient, OrderStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import axios from 'axios';
 
 const prisma = new PrismaClient();
+
+// 高德地图 API 配置
+const AMAP_KEY = process.env.AMAP_KEY || '';
+const AMAP_BASE_URL = 'https://restapi.amap.com/v3';
+
+// 商品名称列表
+const productNames = [
+  'iPhone 15 Pro', 'MacBook Pro', 'iPad Air', 'AirPods Pro', 'Apple Watch',
+  '华为 Mate 60', '小米 14', 'OPPO Find X7', 'vivo X100', '荣耀 Magic6',
+  '联想 ThinkPad', '戴尔 XPS', '华硕 ROG', '惠普 EliteBook', 'Surface Pro',
+  '索尼 WH-1000XM5', 'Bose QuietComfort', 'JBL 音响', '漫步者耳机', '雷蛇鼠标',
+  '罗技键盘', '机械键盘', '游戏手柄', '显示器', '移动硬盘',
+  'U盘', '充电宝', '数据线', '手机壳', '保护膜',
+  '蓝牙耳机', '智能手表', '运动手环', '智能音箱', '摄像头',
+];
+
+// 姓氏列表
+const surnames = ['张', '李', '王', '刘', '陈', '杨', '赵', '黄', '周', '吴', '徐', '孙', '马', '朱', '胡', '林', '郭', '何', '高', '罗'];
+
+// 名字列表
+const givenNames = ['伟', '芳', '娜', '秀英', '敏', '静', '丽', '强', '磊', '军', '洋', '勇', '艳', '杰', '涛', '明', '超', '秀兰', '霞', '平', '刚', '桂英'];
+
+// 生成随机姓名
+function randomName(): string {
+  const surname = surnames[Math.floor(Math.random() * surnames.length)];
+  const givenName = givenNames[Math.floor(Math.random() * givenNames.length)];
+  return surname + givenName;
+}
+
+// 生成随机手机号
+function randomPhone(): string {
+  const prefix = ['139', '138', '137', '136', '135', '134', '159', '158', '157', '150', '151', '152', '188', '189'];
+  const prefixStr = prefix[Math.floor(Math.random() * prefix.length)];
+  const suffix = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
+  return prefixStr + suffix;
+}
+
+// 生成随机金额（100-50000）
+function randomAmount(): number {
+  const ranges = [
+    { min: 100, max: 500, weight: 0.3 },      // 低价值 30%
+    { min: 500, max: 2000, weight: 0.25 },   // 中低价值 25%
+    { min: 2000, max: 5000, weight: 0.2 },   // 中价值 20%
+    { min: 5000, max: 10000, weight: 0.15 }, // 中高价值 15%
+    { min: 10000, max: 50000, weight: 0.1 }, // 高价值 10%
+  ];
+  
+  const rand = Math.random();
+  let cumulative = 0;
+  for (const range of ranges) {
+    cumulative += range.weight;
+    if (rand <= cumulative) {
+      return Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+    }
+  }
+  return Math.floor(Math.random() * 49001) + 100;
+}
+
+// 路径生成队列（用于 seed.ts）
+interface RouteRequest {
+  origin: [number, number];
+  destination: [number, number];
+  retryCount: number;
+  resolve: (points: number[][]) => void;
+  reject: (error: Error) => void;
+}
+
+class RouteQueue {
+  private queue: RouteRequest[] = [];
+  private processing = false;
+  private readonly maxRetries = 3;
+  private readonly intervalMs = 500; // 半秒
+
+  async getRoute(
+    origin: [number, number],
+    destination: [number, number],
+  ): Promise<number[][]> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        origin,
+        destination,
+        retryCount: 0,
+        resolve,
+        reject,
+      });
+
+      this.processQueue();
+    });
+  }
+
+  private async processQueue() {
+    if (this.processing || this.queue.length === 0) {
+      return;
+    }
+
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      const request = this.queue.shift();
+      if (!request) {
+        break;
+      }
+
+      try {
+        const points = await this.fetchRouteWithRetry(
+          request.origin,
+          request.destination,
+          request.retryCount,
+        );
+        request.resolve(points);
+      } catch (error) {
+        // 如果重试次数未达到上限，放回队尾
+        if (request.retryCount < this.maxRetries) {
+          request.retryCount++;
+          this.queue.push(request);
+          console.warn(
+            `路径获取失败，重试 ${request.retryCount}/${this.maxRetries}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        } else {
+          // 达到最大重试次数，回退到直线路径
+          console.error(
+            `路径获取失败，已重试 ${this.maxRetries} 次，回退到直线路径: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          const fallbackPoints = this.interpolateRoute(
+            request.origin,
+            request.destination,
+          );
+          request.resolve(fallbackPoints);
+        }
+      }
+
+      // 半秒间隔
+      if (this.queue.length > 0) {
+        await this.sleep(this.intervalMs);
+      }
+    }
+
+    this.processing = false;
+  }
+
+  private async fetchRouteWithRetry(
+    origin: [number, number],
+    destination: [number, number],
+    retryCount: number,
+  ): Promise<number[][]> {
+    if (!AMAP_KEY) {
+      throw new Error('高德地图 API Key 未配置，使用直线路径');
+    }
+
+    try {
+      const response = await axios.get(`${AMAP_BASE_URL}/direction/driving`, {
+        params: {
+          key: AMAP_KEY,
+          origin: `${origin[0]},${origin[1]}`,
+          destination: `${destination[0]},${destination[1]}`,
+          extensions: 'all',
+        },
+      });
+
+      if (response.data.status !== '1') {
+        throw new Error(`高德地图 API 错误: ${response.data.info}`);
+      }
+
+      const route = response.data.route;
+      if (!route || !route.paths || route.paths.length === 0) {
+        throw new Error('未找到路径');
+      }
+
+      // 提取路径点
+      const path = route.paths[0];
+      const points: number[][] = [];
+
+      for (const step of path.steps) {
+        if (step.polyline) {
+          const polylinePoints = step.polyline.split(';');
+          for (const point of polylinePoints) {
+            if (!point || point.trim() === '') {
+              continue;
+            }
+            const parts = point.split(',');
+            if (parts.length !== 2) {
+              continue;
+            }
+            const lng = Number(parts[0]);
+            const lat = Number(parts[1]);
+
+            if (
+              isNaN(lng) ||
+              isNaN(lat) ||
+              !isFinite(lng) ||
+              !isFinite(lat) ||
+              lng < 73 ||
+              lng > 135 ||
+              lat < 18 ||
+              lat > 54
+            ) {
+              continue;
+            }
+
+            points.push([lng, lat]);
+          }
+        }
+      }
+
+      if (points.length === 0) {
+        throw new Error('未找到有效的路径点');
+      }
+
+      // 如果点太多，进行采样（保留每 N 个点）
+      return this.samplePoints(points, 50);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private samplePoints(points: number[][], maxPoints: number): number[][] {
+    if (points.length <= maxPoints) {
+      return points;
+    }
+
+    const sampledPoints: number[][] = [points[0]];
+    const step = Math.floor(points.length / (maxPoints - 1));
+
+    for (let i = step; i < points.length - 1; i += step) {
+      sampledPoints.push(points[i]);
+    }
+
+    sampledPoints.push(points[points.length - 1]);
+    return sampledPoints;
+  }
+
+  private interpolateRoute(
+    origin: [number, number],
+    destination: [number, number],
+    steps: number = 20,
+  ): number[][] {
+    const points: number[][] = [origin];
+
+    for (let i = 1; i < steps - 1; i++) {
+      const ratio = i / (steps - 1);
+      const lng = origin[0] + (destination[0] - origin[0]) * ratio;
+      const lat = origin[1] + (destination[1] - origin[1]) * ratio;
+      points.push([lng, lat]);
+    }
+
+    points.push(destination);
+    return points;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}
+
+const routeQueue = new RouteQueue();
+
+// 生成路径点（优先使用高德 API，失败则使用直线路径）
+async function generateRoutePoints(
+  origin: [number, number],
+  destination: [number, number],
+): Promise<number[][]> {
+  return routeQueue.getRoute(origin, destination);
+}
+
+// 生成物流时间线
+async function createTimeline(
+  orderId: string,
+  status: OrderStatus,
+  origin: { address: string },
+  destination: { address: string },
+  createdAt: Date,
+  actualTime?: Date,
+) {
+  const timeline: Array<{
+    orderId: string;
+    status: string;
+    description: string;
+    location: string;
+    timestamp: Date;
+  }> = [];
+
+  // 所有订单都有"订单已创建"
+  timeline.push({
+    orderId,
+    status: '订单已创建',
+    description: '商家已创建订单',
+    location: origin.address,
+    timestamp: createdAt,
+  });
+
+  if (status === OrderStatus.PENDING) {
+    // 待发货订单只有创建记录
+    // 不做任何操作
+  } else if (status === OrderStatus.SHIPPING) {
+    // 运输中订单：已创建 -> 已揽收 -> 运输中
+    const pickupTime = new Date(createdAt.getTime() + Math.random() * 2 * 60 * 60 * 1000); // 0-2小时后
+    timeline.push({
+      orderId,
+      status: '已揽收',
+      description: '快递已从发货地揽收',
+      location: origin.address,
+      timestamp: pickupTime,
+    });
+
+    const shippingTime = new Date(pickupTime.getTime() + Math.random() * 2 * 60 * 60 * 1000); // 揽收后0-2小时
+    timeline.push({
+      orderId,
+      status: '运输中',
+      description: '包裹正在运输途中',
+      location: '运输途中',
+      timestamp: shippingTime,
+    });
+  } else if (status === OrderStatus.DELIVERED) {
+    // 已送达订单：完整流程
+    const pickupTime = new Date(createdAt.getTime() + Math.random() * 2 * 60 * 60 * 1000);
+    timeline.push({
+      orderId,
+      status: '已揽收',
+      description: '快递已从发货地揽收',
+      location: origin.address,
+      timestamp: pickupTime,
+    });
+
+    const shippingTime = new Date(pickupTime.getTime() + Math.random() * 4 * 60 * 60 * 1000);
+    timeline.push({
+      orderId,
+      status: '运输中',
+      description: '包裹正在运输途中',
+      location: '运输途中',
+      timestamp: shippingTime,
+    });
+
+    const deliveryTime = new Date(shippingTime.getTime() + Math.random() * 4 * 60 * 60 * 1000);
+    timeline.push({
+      orderId,
+      status: '派送中',
+      description: '快递员正在派送',
+      location: destination.address,
+      timestamp: deliveryTime,
+    });
+
+    if (actualTime) {
+      timeline.push({
+        orderId,
+        status: '已签收',
+        description: '包裹已成功签收',
+        location: destination.address,
+        timestamp: actualTime,
+      });
+    }
+  } else if (status === OrderStatus.CANCELLED) {
+    // 已取消订单：已创建 -> 已取消
+    const cancelTime = new Date(createdAt.getTime() + Math.random() * 24 * 60 * 60 * 1000); // 0-24小时内取消
+    timeline.push({
+      orderId,
+      status: '已取消',
+      description: '订单已取消',
+      location: origin.address,
+      timestamp: cancelTime,
+    });
+  }
+
+  if (timeline.length > 0) {
+    await prisma.logisticsTimeline.createMany({ data: timeline });
+  }
+}
 
 async function main() {
   console.log('🌱 开始数据填充...');
@@ -46,242 +413,297 @@ async function main() {
 
   console.log('✅ 创建商家账号:', merchant.username);
 
-  // 创建配送区域（北京市中心）
-  const deliveryZone = await prisma.deliveryZone.create({
-    data: {
-      merchantId: merchant.id,
-      name: '北京市中心配送区',
-      boundary: {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [116.3, 39.85],
-            [116.5, 39.85],
-            [116.5, 40.0],
-            [116.3, 40.0],
-            [116.3, 39.85],
-          ],
-        ],
-      },
-      timeLimit: 24,
-    },
+  // 先删除该商家的所有现有数据，避免重复
+  console.log('🗑️  清理旧数据...');
+  const deletedOrders = await prisma.order.deleteMany({
+    where: { merchantId: merchant.id },
   });
+  console.log(`   已删除 ${deletedOrders.count} 个旧订单`);
 
-  console.log('✅ 创建配送区域:', deliveryZone.name);
-
-  // 创建模拟订单
-  const orders = [
-    {
-      receiverName: '张三',
-      receiverPhone: '13900139001',
-      receiverAddress: '北京市朝阳区望京街道',
-      productName: 'iPhone 15 Pro',
-      productQuantity: 1,
-      amount: 8999,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.473168,
-        lat: 39.996648,
-        address: '北京市朝阳区望京街道',
-      },
-      logistics: '顺丰速运',
-    },
-    {
-      receiverName: '李四',
-      receiverPhone: '13900139002',
-      receiverAddress: '北京市海淀区中关村大街',
-      productName: 'MacBook Pro',
-      productQuantity: 1,
-      amount: 15999,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.310316,
-        lat: 39.989896,
-        address: '北京市海淀区中关村大街',
-      },
-      logistics: '京东物流',
-    },
-    {
-      receiverName: '王五',
-      receiverPhone: '13900139003',
-      receiverAddress: '北京市西城区金融街',
-      productName: 'iPad Air',
-      productQuantity: 2,
-      amount: 9998,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.36123,
-        lat: 39.916345,
-        address: '北京市西城区金融街',
-      },
-      logistics: '顺丰速运',
-    },
-    {
-      receiverName: '赵六',
-      receiverPhone: '13900139004',
-      receiverAddress: '北京市丰台区方庄',
-      productName: 'AirPods Pro',
-      productQuantity: 1,
-      amount: 1999,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.439631,
-        lat: 39.863642,
-        address: '北京市丰台区方庄',
-      },
-      logistics: '中通快递',
-    },
-    {
-      receiverName: '孙七',
-      receiverPhone: '13900139005',
-      receiverAddress: '北京市石景山区石景山路',
-      productName: 'Apple Watch',
-      productQuantity: 1,
-      amount: 3199,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.222982,
-        lat: 39.906611,
-        address: '北京市石景山区石景山路',
-      },
-      logistics: '韵达快递',
-    },
-  ];
-
-  for (const orderData of orders) {
-    const orderNo = `ORD${Date.now()}${Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, '0')}`;
-
-    // 根据物流公司计算预计送达时间
-    const company = logisticsCompanies.find(c => c.name === orderData.logistics);
-    const timeLimit = company?.timeLimit || 48;
-    const estimatedTime = new Date(Date.now() + timeLimit * 60 * 60 * 1000);
-
-    const order = await prisma.order.create({
-      data: {
-        orderNo,
-        merchantId: merchant.id,
-        status: OrderStatus.PENDING,
-        ...orderData,
-        estimatedTime,
-      },
-    });
-
-    // 创建初始时间线
-    await prisma.logisticsTimeline.create({
-      data: {
-        orderId: order.id,
-        status: '订单已创建',
-        description: '商家已创建订单',
-        location: orderData.origin.address,
-      },
-    });
-
-    console.log(`✅ 创建订单: ${orderNo} - ${orderData.receiverName} (${orderData.logistics})`);
+  const deletedZones = await prisma.deliveryZone.deleteMany({
+    where: { merchantId: merchant.id },
+  });
+  if (deletedZones.count > 0) {
+    console.log(`   已删除 ${deletedZones.count} 个旧配送区域`);
   }
 
-  // 创建一个已发货的订单用于演示
-  const shippingOrderNo = `ORD${Date.now()}${Math.floor(Math.random() * 10000)
-    .toString()
-    .padStart(4, '0')}`;
-
-  const shippingOrder = await prisma.order.create({
-    data: {
-      orderNo: shippingOrderNo,
-      merchantId: merchant.id,
-      status: OrderStatus.SHIPPING,
-      receiverName: '测试用户',
-      receiverPhone: '13900139999',
-      receiverAddress: '北京市朝阳区三里屯',
-      productName: 'iPhone 15',
-      productQuantity: 1,
-      amount: 6999,
-      origin: {
-        lng: 116.397428,
-        lat: 39.90923,
-        address: '北京市东城区天安门广场',
-      },
-      destination: {
-        lng: 116.455395,
-        lat: 39.937458,
-        address: '北京市朝阳区三里屯',
-      },
-      currentLocation: {
-        lng: 116.397428,
-        lat: 39.90923,
-      },
-      logistics: '顺丰速运',
-      estimatedTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2小时后
-    },
-  });
-
-  // 为运输中订单创建路径
-  const routePoints = [
-    [116.397428, 39.90923], // 起点
-    [116.41, 39.915],
-    [116.425, 39.92],
-    [116.44, 39.925],
-    [116.455395, 39.937458], // 终点
+  // 创建配送区域（省会及以上城市，不重复）
+  const deliveryZones = [
+    { name: '北京配送区', center: [116.407396, 39.904211], range: 0.15, timeLimit: 24 },
+    { name: '上海配送区', center: [121.473701, 31.230416], range: 0.15, timeLimit: 24 },
+    { name: '广州配送区', center: [113.264385, 23.129112], range: 0.15, timeLimit: 24 },
+    { name: '深圳配送区', center: [114.057868, 22.543099], range: 0.12, timeLimit: 24 },
+    { name: '成都配送区', center: [104.066541, 30.572269], range: 0.15, timeLimit: 48 },
+    { name: '杭州配送区', center: [120.155070, 30.274084], range: 0.15, timeLimit: 24 },
+    { name: '南京配送区', center: [118.796877, 32.060255], range: 0.15, timeLimit: 24 },
+    { name: '武汉配送区', center: [114.316200, 30.581000], range: 0.15, timeLimit: 48 },
+    { name: '西安配送区', center: [108.940175, 34.341568], range: 0.15, timeLimit: 48 },
+    { name: '郑州配送区', center: [113.6401, 34.7566], range: 0.15, timeLimit: 48 },
+    { name: '天津配送区', center: [117.200983, 39.084158], range: 0.15, timeLimit: 24 },
+    { name: '重庆配送区', center: [106.551556, 29.562849], range: 0.15, timeLimit: 48 },
+    { name: '济南配送区', center: [117.120095, 36.651216], range: 0.12, timeLimit: 48 },
+    { name: '沈阳配送区', center: [123.431474, 41.805698], range: 0.15, timeLimit: 48 },
+    { name: '长沙配送区', center: [112.938814, 28.228209], range: 0.12, timeLimit: 48 },
+    { name: '福州配送区', center: [119.296494, 26.074507], range: 0.12, timeLimit: 48 },
+    { name: '合肥配送区', center: [117.227239, 31.820586], range: 0.12, timeLimit: 48 },
+    { name: '石家庄配送区', center: [114.514861, 38.042306], range: 0.12, timeLimit: 48 },
+    { name: '哈尔滨配送区', center: [126.535797, 45.802982], range: 0.15, timeLimit: 72 },
+    { name: '长春配送区', center: [125.323544, 43.817071], range: 0.12, timeLimit: 72 },
+    { name: '昆明配送区', center: [102.714601, 25.049153], range: 0.12, timeLimit: 72 },
+    { name: '南昌配送区', center: [115.892151, 28.676493], range: 0.12, timeLimit: 48 },
+    { name: '南宁配送区', center: [108.366543, 22.817002], range: 0.12, timeLimit: 72 },
+    { name: '太原配送区', center: [112.548879, 37.870590], range: 0.12, timeLimit: 48 },
+    { name: '贵阳配送区', center: [106.630153, 26.647661], range: 0.12, timeLimit: 72 },
+    { name: '海口配送区', center: [110.330802, 20.022071], range: 0.10, timeLimit: 72 },
+    { name: '兰州配送区', center: [103.823557, 36.058039], range: 0.12, timeLimit: 72 },
+    { name: '银川配送区', center: [106.230909, 38.487194], range: 0.10, timeLimit: 72 },
+    { name: '西宁配送区', center: [101.778916, 36.617134], range: 0.10, timeLimit: 72 },
+    { name: '乌鲁木齐配送区', center: [87.616848, 43.825592], range: 0.12, timeLimit: 96 },
+    { name: '拉萨配送区', center: [91.140856, 29.645554], range: 0.10, timeLimit: 96 },
   ];
 
-  await prisma.route.create({
-    data: {
-      orderId: shippingOrder.id,
-      points: routePoints,
-      currentStep: 0,
-      totalSteps: routePoints.length,
-      interval: 5000,
-    },
+  console.log('📦 创建配送区域...');
+  const zoneMap = new Map<string, any>();
+  for (const zoneData of deliveryZones) {
+    const [centerLng, centerLat] = zoneData.center;
+    const range = zoneData.range;
+    
+    const boundary = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [centerLng - range, centerLat - range],
+          [centerLng + range, centerLat - range],
+          [centerLng + range, centerLat + range],
+          [centerLng - range, centerLat + range],
+          [centerLng - range, centerLat - range],
+        ],
+      ],
+    };
+
+    const existingZone = await prisma.deliveryZone.findFirst({
+      where: {
+        merchantId: merchant.id,
+        name: zoneData.name,
+      },
+    });
+
+    const deliveryZone = existingZone
+      ? await prisma.deliveryZone.update({
+          where: { id: existingZone.id },
+          data: {
+            boundary,
+            timeLimit: zoneData.timeLimit,
+          },
+        })
+      : await prisma.deliveryZone.create({
+          data: {
+            merchantId: merchant.id,
+            name: zoneData.name,
+            boundary,
+            timeLimit: zoneData.timeLimit,
+          },
+        });
+
+    zoneMap.set(zoneData.name, {
+      ...zoneData,
+      id: deliveryZone.id,
+    });
+  }
+  console.log(`✅ 已创建 ${deliveryZones.length} 个配送区域`);
+
+  // 商家发货地址
+  const origin = {
+    lng: 116.407396,
+    lat: 39.904211,
+    address: '北京市东城区天安门广场',
+  };
+
+  // 生成订单数据
+  const totalOrders = 100;
+  const statusDistribution = {
+    [OrderStatus.PENDING]: Math.floor(totalOrders * 0.60),   // 60个
+    [OrderStatus.SHIPPING]: Math.floor(totalOrders * 0.20), // 20个
+    [OrderStatus.DELIVERED]: Math.floor(totalOrders * 0.15), // 15个
+    [OrderStatus.CANCELLED]: Math.floor(totalOrders * 0.05), // 5个
+  };
+
+  // 确保总数正确
+  const actualTotal = Object.values(statusDistribution).reduce((a, b) => a + b, 0);
+  statusDistribution[OrderStatus.PENDING] += totalOrders - actualTotal;
+
+  console.log('\n📦 开始生成订单数据...');
+  console.log(`   状态分布: PENDING(${statusDistribution[OrderStatus.PENDING]}), SHIPPING(${statusDistribution[OrderStatus.SHIPPING]}), DELIVERED(${statusDistribution[OrderStatus.DELIVERED]}), CANCELLED(${statusDistribution[OrderStatus.CANCELLED]})`);
+
+  // 时间范围：过去30天到今天
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  let orderCount = 0;
+  const statusCounts: Record<OrderStatus, number> = {
+    [OrderStatus.PENDING]: 0,
+    [OrderStatus.SHIPPING]: 0,
+    [OrderStatus.DELIVERED]: 0,
+    [OrderStatus.CANCELLED]: 0,
+  };
+
+  // 按状态生成订单
+  for (const [status, count] of Object.entries(statusDistribution)) {
+    const orderStatus = status as OrderStatus;
+    
+    for (let i = 0; i < count; i++) {
+      // 随机选择配送区域
+      const zoneIndex = Math.floor(Math.random() * deliveryZones.length);
+      const zone = deliveryZones[zoneIndex];
+      const [centerLng, centerLat] = zone.center;
+      const range = zone.range * 0.8; // 稍微缩小范围，确保在区域内
+
+      // 在配送区域内随机生成目的地
+      const destLng = centerLng + (Math.random() - 0.5) * range * 2;
+      const destLat = centerLat + (Math.random() - 0.5) * range * 2;
+
+      // 随机选择物流公司
+      const logistics = logisticsCompanies[Math.floor(Math.random() * logisticsCompanies.length)];
+
+      // 随机生成创建时间（过去30天内）
+      const daysAgo = Math.random() * 30;
+      const createdAt = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+
+      // 计算预计送达时间
+      const estimatedTime = new Date(createdAt.getTime() + logistics.timeLimit * 60 * 60 * 1000);
+
+      // 生成订单号
+      const orderNo = `ORD${createdAt.getTime()}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+
+      // 根据状态设置额外字段
+      let currentLocation: { lng: number; lat: number } | undefined;
+      let actualTime: Date | undefined;
+      let routePoints: number[][] | undefined;
+
+      if (orderStatus === OrderStatus.SHIPPING) {
+        // 运输中：当前位置在起点和终点之间
+        const progress = Math.random() * 0.7; // 0-70%进度
+        currentLocation = {
+          lng: origin.lng + (destLng - origin.lng) * progress,
+          lat: origin.lat + (destLat - origin.lat) * progress,
+        };
+        // 使用路径队列服务获取真实路径（带限流和重试）
+        routePoints = await generateRoutePoints([origin.lng, origin.lat], [destLng, destLat]);
+      } else if (orderStatus === OrderStatus.DELIVERED) {
+        // 已送达：当前位置在终点，有实际送达时间
+        currentLocation = { lng: destLng, lat: destLat };
+        const deliveryDelay = Math.random() * 2 * 60 * 60 * 1000; // 0-2小时延迟
+        actualTime = new Date(estimatedTime.getTime() + deliveryDelay);
+        // 使用路径队列服务获取真实路径（带限流和重试）
+        routePoints = await generateRoutePoints([origin.lng, origin.lat], [destLng, destLat]);
+      } else if (orderStatus === OrderStatus.CANCELLED) {
+        // 已取消：没有当前位置和路径
+        currentLocation = undefined;
+        routePoints = undefined;
+      } else {
+        // 待发货：没有当前位置和路径
+        currentLocation = undefined;
+        routePoints = undefined;
+      }
+
+      // 创建订单
+      const order = await prisma.order.create({
+        data: {
+          orderNo,
+          merchantId: merchant.id,
+          status: orderStatus,
+          receiverName: randomName(),
+          receiverPhone: randomPhone(),
+          receiverAddress: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+          productName: productNames[Math.floor(Math.random() * productNames.length)],
+          productQuantity: Math.floor(Math.random() * 3) + 1,
+          amount: randomAmount(),
+          origin,
+          destination: {
+            lng: destLng,
+            lat: destLat,
+            address: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+          },
+          currentLocation,
+          logistics: logistics.name,
+          estimatedTime,
+          actualTime,
+          createdAt,
+          updatedAt: orderStatus === OrderStatus.DELIVERED && actualTime ? actualTime : createdAt,
+        },
+      });
+
+      // 创建路径（如果有）
+      if (routePoints) {
+        await prisma.route.create({
+          data: {
+            orderId: order.id,
+            points: routePoints,
+            currentStep: orderStatus === OrderStatus.DELIVERED ? routePoints.length - 1 : Math.floor(Math.random() * (routePoints.length - 1)),
+            totalSteps: routePoints.length,
+            interval: 5000,
+          },
+        });
+      }
+
+      // 创建时间线
+      await createTimeline(order.id, orderStatus, origin, order.destination as any, createdAt, actualTime);
+
+      orderCount++;
+      statusCounts[orderStatus]++;
+
+      if (orderCount % 50 === 0) {
+        console.log(`   已生成 ${orderCount}/${totalOrders} 个订单...`);
+      }
+    }
+  }
+
+  console.log(`\n✅ 订单生成完成！`);
+  console.log(`   总计: ${orderCount} 个订单`);
+  console.log(`   PENDING: ${statusCounts[OrderStatus.PENDING]} 个`);
+  console.log(`   SHIPPING: ${statusCounts[OrderStatus.SHIPPING]} 个`);
+  console.log(`   DELIVERED: ${statusCounts[OrderStatus.DELIVERED]} 个`);
+  console.log(`   CANCELLED: ${statusCounts[OrderStatus.CANCELLED]} 个`);
+
+  // 统计各配送区域和物流公司的订单数
+  const zoneStats = new Map<string, number>();
+  const logisticsStats = new Map<string, number>();
+  
+  const allOrders = await prisma.order.findMany({
+    where: { merchantId: merchant.id, status: OrderStatus.DELIVERED },
+    select: { destination: true, logistics: true },
   });
 
-  // 添加时间线
-  await prisma.logisticsTimeline.createMany({
-    data: [
-      {
-        orderId: shippingOrder.id,
-        status: '订单已创建',
-        description: '商家已创建订单',
-        location: '北京市东城区天安门广场',
-        timestamp: new Date(Date.now() - 3600000), // 1小时前
-      },
-      {
-        orderId: shippingOrder.id,
-        status: '已揽收',
-        description: '快递已从发货地揽收',
-        location: '北京市东城区天安门广场',
-        timestamp: new Date(Date.now() - 1800000), // 30分钟前
-      },
-    ],
-  });
+  for (const order of allOrders) {
+    const dest = order.destination as any;
+    // 简单匹配：根据坐标判断属于哪个配送区域
+    for (const zone of deliveryZones) {
+      const [centerLng, centerLat] = zone.center;
+      const range = zone.range;
+      if (dest.lng >= centerLng - range && dest.lng <= centerLng + range &&
+          dest.lat >= centerLat - range && dest.lat <= centerLat + range) {
+        zoneStats.set(zone.name, (zoneStats.get(zone.name) || 0) + 1);
+        break;
+      }
+    }
+    logisticsStats.set(order.logistics, (logisticsStats.get(order.logistics) || 0) + 1);
+  }
 
-  console.log(`✅ 创建运输中订单: ${shippingOrderNo} (用于实时追踪演示)`);
+  console.log('\n📊 数据统计:');
+  console.log(`   配送区域订单分布（前10）:`);
+  const sortedZones = Array.from(zoneStats.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  for (const [zone, count] of sortedZones) {
+    console.log(`     ${zone}: ${count} 个`);
+  }
+  console.log(`   物流公司订单分布:`);
+  for (const [logistics, count] of Array.from(logisticsStats.entries()).sort((a, b) => b[1] - a[1])) {
+    console.log(`     ${logistics}: ${count} 个`);
+  }
 
-  console.log('🎉 数据填充完成！');
+  console.log('\n🎉 数据填充完成！');
   console.log('\n📝 测试账号信息:');
   console.log('用户名: merchant1');
   console.log('密码: 123456');
-  console.log(`\n📦 运输中订单号: ${shippingOrderNo} (可用于实时追踪测试)`);
 }
 
 main()
@@ -292,4 +714,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

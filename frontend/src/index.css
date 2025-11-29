@@ -14,10 +14,5 @@ body {
 
 #root {
   min-height: 100vh;
-  min-width: 375px;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
