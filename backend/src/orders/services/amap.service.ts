@@ -11,7 +11,7 @@ export class AmapService {
     this.apiKey = this.configService.get<string>('AMAP_KEY');
   }
 
-  async getRoute(origin: string, destination: string): Promise<number[][]> {
+  async getRoute(origin: string, destination: string): Promise<{ points: number[][]; timeArray: number[] }> {
     if (!this.apiKey) {
       throw new Error('高德地图 API Key 未配置');
     }
@@ -35,14 +35,25 @@ export class AmapService {
         throw new Error('未找到路径');
       }
 
-      // 提取路径点
+      // 提取路径点和时间信息
       const path = route.paths[0];
       const points: number[][] = [];
+      const timeArray: number[] = [0]; // t0[0] = 0
+      let cumulativeTime = 0; // 累计耗时（秒）
 
       for (const step of path.steps) {
+        // 获取当前步骤的耗时（秒）
+        const stepDuration = step.duration ? Number(step.duration) : 0;
+        
         if (step.polyline) {
           const polylinePoints = step.polyline.split(';');
-          for (const point of polylinePoints) {
+          const pointsInStep = polylinePoints.length;
+          
+          // 如果步骤有多个点，将耗时平均分配到每个点
+          const timePerPoint = pointsInStep > 0 ? stepDuration / pointsInStep : 0;
+          
+          for (let i = 0; i < polylinePoints.length; i++) {
+            const point = polylinePoints[i];
             if (!point || point.trim() === '') {
               continue; // 跳过空字符串
             }
@@ -64,6 +75,15 @@ export class AmapService {
             }
             
             points.push([lng, lat]);
+            // 累计时间：每个点的时间是累计到该点的总耗时
+            cumulativeTime += timePerPoint;
+            timeArray.push(cumulativeTime);
+          }
+        } else if (stepDuration > 0) {
+          // 如果步骤没有路径点但有耗时，将时间累加到最后一个点
+          if (timeArray.length > 0) {
+            timeArray[timeArray.length - 1] += stepDuration;
+            cumulativeTime += stepDuration;
           }
         }
       }
@@ -73,28 +93,58 @@ export class AmapService {
         throw new Error('未找到有效的路径点');
       }
 
-      // 如果点太多，进行采样（保留每 N 个点）
-      const sampledPoints = this.samplePoints(points, 50);
-      return sampledPoints;
+      // 确保时间数组长度与路径点数组长度一致
+      // 如果时间数组比路径点多1（因为t0[0]=0），需要调整
+      if (timeArray.length === points.length + 1) {
+        // 移除第一个0，因为第一个点的时间应该是0
+        timeArray.shift();
+      } else if (timeArray.length < points.length) {
+        // 如果时间数组不够，用最后一个值填充
+        const lastTime = timeArray[timeArray.length - 1] || 0;
+        while (timeArray.length < points.length) {
+          timeArray.push(lastTime);
+        }
+      } else if (timeArray.length > points.length) {
+        // 如果时间数组太多，截断
+        timeArray.splice(points.length);
+      }
+
+      // 如果点太多，进行采样（保留每 N 个点），同时同步采样时间数组
+      const sampled = this.samplePointsWithTime(points, timeArray, 50);
+      return sampled;
     } catch (error) {
-      throw new Error(`获取路径失败: ${error.message}`);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`获取路径失败: ${String(error)}`);
     }
   }
 
-  private samplePoints(points: number[][], maxPoints: number): number[][] {
+  /**
+   * 采样路径点和时间数组，保持同步
+   */
+  private samplePointsWithTime(
+    points: number[][],
+    timeArray: number[],
+    maxPoints: number,
+  ): { points: number[][]; timeArray: number[] } {
     if (points.length <= maxPoints) {
-      return points;
+      return { points, timeArray };
     }
 
     const sampledPoints: number[][] = [points[0]]; // 始终保留起点
+    const sampledTimeArray: number[] = [timeArray[0]]; // 始终保留起点时间
     const step = Math.floor(points.length / (maxPoints - 1));
 
     for (let i = step; i < points.length - 1; i += step) {
       sampledPoints.push(points[i]);
+      sampledTimeArray.push(timeArray[i]);
     }
 
     sampledPoints.push(points[points.length - 1]); // 始终保留终点
-    return sampledPoints;
+    sampledTimeArray.push(timeArray[timeArray.length - 1]); // 始终保留终点时间
+
+    return { points: sampledPoints, timeArray: sampledTimeArray };
   }
 }
 

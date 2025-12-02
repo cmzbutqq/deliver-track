@@ -45,11 +45,29 @@ export class StatisticsService {
       },
     });
 
+    // 待发货订单数（按商家ID过滤）
+    const pendingOrders = await this.prisma.order.count({
+      where: {
+        merchantId,
+        status: 'PENDING',
+      },
+    });
+
+    // 已取消订单数（按商家ID过滤）
+    const cancelledOrders = await this.prisma.order.count({
+      where: {
+        merchantId,
+        status: 'CANCELLED',
+      },
+    });
+
     return {
       todayOrders,
       todayAmount: todayAmountResult._sum.amount || 0,
       shippingOrders,
       completedOrders,
+      pendingOrders,
+      cancelledOrders,
     };
   }
 

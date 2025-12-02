@@ -47,6 +47,7 @@ export interface Route {
   id: string
   orderId: string
   points: number[][] // [[lng, lat], ...]
+  timeArray?: number[] // t_real数组，单位：秒
   currentStep: number
   totalSteps: number
   interval: number
@@ -82,7 +83,7 @@ export interface DeliveryZone {
     type: 'Polygon'
     coordinates: number[][][]
   }
-  timeLimit: number
+  logistics: string
   createdAt: string
   updatedAt: string
 }
@@ -91,7 +92,7 @@ export interface DeliveryZone {
 export interface LogisticsCompany {
   id: string
   name: string
-  timeLimit: number
+  speed: number // 配送速度系数 (0 < speed <= 1)
   createdAt: string
   updatedAt: string
 }
@@ -162,6 +163,8 @@ export interface OverviewStatistics {
   todayAmount: number
   shippingOrders: number
   completedOrders: number
+  pendingOrders: number
+  cancelledOrders: number
 }
 
 export interface ZoneStatistics {

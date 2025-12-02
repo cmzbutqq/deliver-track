@@ -7,15 +7,15 @@ export class LogisticsCompaniesService {
 
   /**
    * 获取所有物流公司列表
-   * 按时效升序排列
+   * 按speed降序排列（speed越大配送越快）
    */
   async findAll() {
     return this.prisma.logisticsCompany.findMany({
-      orderBy: { timeLimit: 'asc' },
+      orderBy: { speed: 'desc' },
       select: {
         id: true,
         name: true,
-        timeLimit: true,
+        speed: true,
       },
     });
   }

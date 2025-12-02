@@ -76,8 +76,8 @@ model DeliveryZone {
   merchantId String   @map("merchant_id")
   // 多边形边界 (存储为 GeoJSON)
   boundary   Json     // { type: "Polygon", coordinates: [[[lng, lat], ...]] }
-  // 配送时效 (小时)
-  timeLimit  Int      @default(24) @map("time_limit")
+  // 物流公司
+  logistics  String   @default("顺丰速运")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -92,11 +92,13 @@ model Route {
   orderId     String   @unique @map("order_id")
   // 路径点数组 (存储为 JSON)
   points      Json     // [[lng, lat], [lng, lat], ...]
+  // 时间数组 (存储为 JSON) - t_real数组，单位：秒
+  timeArray   Json?    @map("time_array") // [t_real[0], t_real[1], ...]
   // 当前步骤索引
   currentStep Int      @default(0) @map("current_step")
   // 总步数
   totalSteps  Int      @map("total_steps")
-  // 每步间隔 (毫秒)
+  // 每步间隔 (毫秒) - 保留用于向后兼容，但不再使用
   interval    Int      @default(5000)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -124,7 +126,7 @@ model LogisticsTimeline {
 model LogisticsCompany {
   id        String   @id @default(uuid())
   name      String   @unique  // 物流公司名称，如 "顺丰速运"
-  timeLimit Int                // 配送时效 (小时)
+  speed     Float              // 配送速度系数 (0 < speed <= 1)，表示配送速度相对开车的比例，speed越小配送越慢
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

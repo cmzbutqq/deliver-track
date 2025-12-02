@@ -71,7 +71,9 @@ const OrderActivityList = () => {
           .slice(0, 100) // 只保留最近100条
       })
     } catch (error) {
-      console.error('加载活动历史失败:', error)
+      // 错误会被上层处理，这里只设置加载状态
+      const errorMessage = error instanceof Error ? error.message : '加载活动历史失败'
+      throw new Error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -79,7 +81,11 @@ const OrderActivityList = () => {
 
   useEffect(() => {
     // 加载历史数据
-    loadHistory()
+    loadHistory().catch((error) => {
+      // 错误已在上层抛出，这里只记录
+      const errorMessage = error instanceof Error ? error.message : '加载活动历史失败'
+      console.error(errorMessage)
+    })
 
     // 确保 WebSocket 已连接
     if (!websocketService.isConnected()) {

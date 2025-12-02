@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsObject, Min } from 'class-validator';
+import { IsString, IsOptional, IsObject } from 'class-validator';
 
 export class CreateDeliveryZoneDto {
   @IsString()
@@ -11,9 +11,8 @@ export class CreateDeliveryZoneDto {
   };
 
   @IsOptional()
-  @IsNumber()
-  @Min(1)
-  timeLimit?: number; // 配送时效（小时）
+  @IsString()
+  logistics?: string; // 物流公司名称
 }
 
 export class UpdateDeliveryZoneDto {
@@ -29,8 +28,7 @@ export class UpdateDeliveryZoneDto {
   };
 
   @IsOptional()
-  @IsNumber()
-  @Min(1)
-  timeLimit?: number;
+  @IsString()
+  logistics?: string; // 物流公司名称
 }
 

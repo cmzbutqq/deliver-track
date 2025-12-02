@@ -26,22 +26,20 @@ export const useAmap = (containerId: string, options: UseAmapOptions = {}) => {
         const container = document.getElementById(containerId)
         if (!container) {
           const err = new Error(`地图容器不存在: #${containerId}. 请确保组件已挂载且容器ID正确。当前 DOM 中所有 ID: ${Array.from(document.querySelectorAll('[id]')).map(el => el.id).join(', ')}`)
-          console.error(err.message)
           if (isMountedRef.current) {
             setError(err)
             setLoading(false)
           }
-          throw err
+          return
         }
 
         if (!import.meta.env.VITE_AMAP_KEY) {
           const err = new Error('缺少高德地图 API Key: 请在 .env 文件中配置 VITE_AMAP_KEY')
-          console.error(err.message)
           if (isMountedRef.current) {
             setError(err)
             setLoading(false)
           }
-          throw err
+          return
         }
 
         // 配置高德地图安全密钥（必须在加载 API 之前配置）
@@ -75,12 +73,11 @@ export const useAmap = (containerId: string, options: UseAmapOptions = {}) => {
           const containerCheck = document.getElementById(containerId)
           if (!containerCheck) {
             const err = new Error(`地图容器在初始化过程中被移除: #${containerId}`)
-            console.error(err.message)
             if (isMountedRef.current) {
               setError(err)
               setLoading(false)
             }
-            throw err
+            return
           }
 
           const mapInstance = new AMapInstance.Map(containerId, {
@@ -100,16 +97,14 @@ export const useAmap = (containerId: string, options: UseAmapOptions = {}) => {
             // 组件已卸载，清理地图
             mapInstance.destroy()
           }
-        } catch (loadError: any) {
-          const errorMessage = loadError?.message || String(loadError) || '未知错误'
-          const errorStack = loadError?.stack || ''
+        } catch (loadError: unknown) {
+          const errorMessage = loadError instanceof Error ? loadError.message : String(loadError) || '未知错误'
+          const errorStack = loadError instanceof Error ? loadError.stack : ''
           const fullError = new Error(`高德地图加载失败: ${errorMessage}${errorStack ? `\n堆栈: ${errorStack}` : ''}`)
-          console.error(fullError.message)
           if (isMountedRef.current) {
             setError(fullError)
             setLoading(false)
           }
-          throw fullError
         }
       }
 
@@ -131,7 +126,6 @@ export const useAmap = (containerId: string, options: UseAmapOptions = {}) => {
           mapInstanceRef.current.destroy()
         } else {
           // 容器已不在 DOM 中，只清理引用，不调用 destroy
-          console.warn(`地图容器 #${containerId} 已不在 DOM 中，跳过 destroy 调用`)
         }
         mapInstanceRef.current = null
       }

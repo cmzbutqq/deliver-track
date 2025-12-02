@@ -5,7 +5,7 @@ interface RouteRequest {
   origin: [number, number];
   destination: [number, number];
   retryCount: number;
-  resolve: (points: number[][]) => void;
+  resolve: (result: { points: number[][]; timeArray: number[] }) => void;
   reject: (error: Error) => void;
 }
 
@@ -29,7 +29,7 @@ export class RouteQueueService {
   async getRoute(
     origin: [number, number],
     destination: [number, number],
-  ): Promise<number[][]> {
+  ): Promise<{ points: number[][]; timeArray: number[] }> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         origin,
@@ -60,30 +60,24 @@ export class RouteQueueService {
       }
 
       try {
-        const points = await this.fetchRouteWithRetry(
+        const result = await this.fetchRouteWithRetry(
           request.origin,
           request.destination,
           request.retryCount,
         );
-        request.resolve(points);
+        request.resolve(result);
       } catch (error) {
         // 如果重试次数未达到上限，放回队尾
         if (request.retryCount < this.maxRetries) {
           request.retryCount++;
           this.queue.push(request);
-          console.warn(
-            `路径获取失败，重试 ${request.retryCount}/${this.maxRetries}: ${error instanceof Error ? error.message : String(error)}`,
-          );
         } else {
           // 达到最大重试次数，回退到直线路径
-          console.error(
-            `路径获取失败，已重试 ${this.maxRetries} 次，回退到直线路径: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          const fallbackPoints = this.interpolateRoute(
+          const fallbackResult = this.interpolateRoute(
             request.origin,
             request.destination,
           );
-          request.resolve(fallbackPoints);
+          request.resolve(fallbackResult);
         }
       }
 
@@ -103,40 +97,53 @@ export class RouteQueueService {
     origin: [number, number],
     destination: [number, number],
     retryCount: number,
-  ): Promise<number[][]> {
-    try {
-      const originStr = `${origin[0]},${origin[1]}`;
-      const destinationStr = `${destination[0]},${destination[1]}`;
-      return await this.amapService.getRoute(originStr, destinationStr);
-    } catch (error) {
-      // 如果是最后一次重试，直接抛出错误
-      if (retryCount >= this.maxRetries - 1) {
-        throw error;
-      }
-      // 否则重新抛出，让调用者决定是否重试
-      throw error;
-    }
+  ): Promise<{ points: number[][]; timeArray: number[] }> {
+    const originStr = `${origin[0]},${origin[1]}`;
+    const destinationStr = `${destination[0]},${destination[1]}`;
+    return await this.amapService.getRoute(originStr, destinationStr);
   }
 
   /**
    * 直线路径插值（回退方案）
+   * 生成直线路径和简单的时间数组（假设平均速度）
    */
   private interpolateRoute(
     origin: [number, number],
     destination: [number, number],
     steps: number = 20,
-  ): number[][] {
+  ): { points: number[][]; timeArray: number[] } {
     const points: number[][] = [origin];
+    const timeArray: number[] = [0];
+
+    // 计算直线距离（公里）
+    const R = 6371; // 地球半径
+    const dLat = ((destination[1] - origin[1]) * Math.PI) / 180;
+    const dLng = ((destination[0] - origin[0]) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((origin[1] * Math.PI) / 180) *
+        Math.cos((destination[1] * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // 距离（公里）
+
+    // 假设平均速度60km/h，计算总耗时（秒）
+    const avgSpeed = 60; // km/h
+    const totalTime = (distance / avgSpeed) * 3600; // 秒
 
     for (let i = 1; i < steps - 1; i++) {
       const ratio = i / (steps - 1);
       const lng = origin[0] + (destination[0] - origin[0]) * ratio;
       const lat = origin[1] + (destination[1] - origin[1]) * ratio;
       points.push([lng, lat]);
+      timeArray.push((totalTime * ratio));
     }
 
     points.push(destination);
-    return points;
+    timeArray.push(totalTime);
+
+    return { points, timeArray };
   }
 
   /**

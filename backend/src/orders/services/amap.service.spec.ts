@@ -176,10 +176,14 @@ describe('AmapService', () => {
         }
       );
 
-      expect(result).toBeInstanceOf(Array);
-      expect(result.length).toBeGreaterThan(0);
-      expect(result[0]).toBeInstanceOf(Array);
-      expect(result[0].length).toBe(2); // [lng, lat]
+      expect(result).toHaveProperty('points');
+      expect(result).toHaveProperty('timeArray');
+      expect(result.points).toBeInstanceOf(Array);
+      expect(result.points.length).toBeGreaterThan(0);
+      expect(result.points[0]).toBeInstanceOf(Array);
+      expect(result.points[0].length).toBe(2); // [lng, lat]
+      expect(result.timeArray).toBeInstanceOf(Array);
+      expect(result.timeArray.length).toBe(result.points.length);
     });
 
     it('应该正确解析多段路径的折线数据', async () => {
@@ -239,9 +243,10 @@ describe('AmapService', () => {
       const result = await service.getRoute('116,39', '116.2,39.2');
 
       // 应该采样到 50 个点左右（允许 ±1 的误差）
-      expect(result.length).toBeLessThanOrEqual(51);
-      expect(result[0]).toEqual([116, 39]); // 保留起点
-      expect(result[result.length - 1]).toEqual([116.199, 39.199]); // 保留终点
+      expect(result.points.length).toBeLessThanOrEqual(51);
+      expect(result.points[0]).toEqual([116, 39]); // 保留起点
+      expect(result.points[result.points.length - 1]).toEqual([116.199, 39.199]); // 保留终点
+      expect(result.timeArray.length).toBe(result.points.length);
     });
   });
 
@@ -346,7 +351,10 @@ describe('AmapService', () => {
       const result = await service.getRoute('116,39', '117,40');
 
       // 应该返回解析后的点（即使坐标可能无效）
-      expect(result).toBeInstanceOf(Array);
+      expect(result).toHaveProperty('points');
+      expect(result).toHaveProperty('timeArray');
+      expect(result.points).toBeInstanceOf(Array);
+      expect(result.timeArray).toBeInstanceOf(Array);
     });
   });
 
@@ -389,9 +397,10 @@ describe('AmapService', () => {
         '116.407526,39.904989'  // 王府井
       );
 
-      expect(result.length).toBeGreaterThan(0);
-      expect(result[0]).toEqual([116.310003, 39.990419]); // 起点
-      expect(result[result.length - 1]).toEqual([116.311103, 39.988419]); // 终点
+      expect(result.points.length).toBeGreaterThan(0);
+      expect(result.points[0]).toEqual([116.310003, 39.990419]); // 起点
+      expect(result.points[result.points.length - 1]).toEqual([116.311103, 39.988419]); // 终点
+      expect(result.timeArray.length).toBe(result.points.length);
     });
   });
 });

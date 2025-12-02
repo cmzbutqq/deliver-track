@@ -5,6 +5,7 @@ import { CreateOrderDto, UpdateOrderDto, ShipOrderDto } from './dto/order.dto';
 import { RouteQueueService } from './services/route-queue.service';
 import { LogisticsCompaniesService } from '../logistics-companies/logistics-companies.service';
 import { TrackingGateway } from '../tracking/tracking.gateway';
+import { SimulatorService } from '../simulator/simulator.service';
 
 @Injectable()
 export class OrdersService {
@@ -14,6 +15,8 @@ export class OrdersService {
     private logisticsCompaniesService: LogisticsCompaniesService,
     @Inject(forwardRef(() => TrackingGateway))
     private trackingGateway: TrackingGateway,
+    @Inject(forwardRef(() => SimulatorService))
+    private simulatorService: SimulatorService,
   ) {}
 
   async create(merchantId: string, dto: CreateOrderDto) {
@@ -33,16 +36,9 @@ export class OrdersService {
       address: '北京市东城区天安门广场',
     };
 
-    // 获取物流公司时效
-    const logisticsCompany = await this.logisticsCompaniesService.findByName(
-      dto.logistics || '顺丰速运',
-    );
-    const timeLimit = logisticsCompany?.timeLimit || 48; // 默认 48 小时
-
-    // 计算预计送达时间
-    const estimatedTime = new Date(
-      Date.now() + timeLimit * 60 * 60 * 1000,
-    );
+    // 创建订单时不设置预计送达时间，等发货时根据路径和物流公司 speed 计算
+    // 这里先设置为 null，在 ship 方法中会计算真实的预计送达时间
+    const estimatedTime = null;
 
     const order = await this.prisma.order.create({
       data: {
@@ -188,21 +184,46 @@ export class OrdersService {
       throw new BadRequestException(`订单终点坐标无效: ${JSON.stringify(destination)}`);
     }
 
-    // 使用路径队列服务获取路径（带限流和重试）
-    const routePoints = await this.routeQueueService.getRoute(
+    // 获取物流公司的speed系数
+    const logisticsCompany = await this.logisticsCompaniesService.findByName(order.logistics);
+    if (!logisticsCompany) {
+      throw new BadRequestException(`物流公司 ${order.logistics} 不存在`);
+    }
+    const speed = logisticsCompany.speed;
+    if (!speed || speed <= 0 || speed > 1) {
+      throw new BadRequestException(`物流公司 ${order.logistics} 的speed系数无效: ${speed}`);
+    }
+
+    // 使用路径队列服务获取路径和时间数组（带限流和重试）
+    const routeResult = await this.routeQueueService.getRoute(
       [origin.lng, origin.lat],
       [destination.lng, destination.lat],
     );
 
-    // 验证 routePoints 有效性
-    if (!Array.isArray(routePoints) || routePoints.length === 0) {
-      throw new BadRequestException(`路径点数组无效: ${JSON.stringify(routePoints)}`);
+    // 验证 routeResult 有效性
+    if (!routeResult || !Array.isArray(routeResult.points) || routeResult.points.length === 0) {
+      throw new BadRequestException(`路径点数组无效: ${JSON.stringify(routeResult)}`);
+    }
+    if (!Array.isArray(routeResult.timeArray) || routeResult.timeArray.length !== routeResult.points.length) {
+      throw new BadRequestException(`时间数组无效: points长度=${routeResult.points.length}, timeArray长度=${routeResult.timeArray?.length || 0}`);
     }
 
-    // 计算预计送达时间（假设平均速度 40km/h）
-    const distance = this.calculateDistance(routePoints);
-    const estimatedHours = distance / 40;
-    const estimatedTime = new Date(Date.now() + estimatedHours * 60 * 60 * 1000);
+    const routePoints = routeResult.points;
+    const t0 = routeResult.timeArray; // 高德API预测的累计耗时（秒）
+
+    // 计算时间数组
+    // t_esti = t0 / speed（预计到达各路径点的累计耗时）
+    const t_esti = t0.map((t) => t / speed);
+
+    // factor = random_range(0.85, 1.2)（订单的随机波动系数）
+    const factor = 0.85 + Math.random() * (1.2 - 0.85);
+
+    // t_real = t_esti * factor（实际到达各路径点的累计耗时）
+    const t_real = t_esti.map((t) => t * factor);
+
+    // 计算预计送达时间：createdAt + t_esti[last] * 1000（毫秒）
+    const estimatedTimeSeconds = t_esti[t_esti.length - 1];
+    const estimatedTime = new Date(Date.now() + estimatedTimeSeconds * 1000);
 
     // 更新订单状态并创建路径（origin 已验证，可以安全使用）
     const updatedOrder = await this.prisma.order.update({
@@ -214,14 +235,15 @@ export class OrdersService {
       },
     });
 
-    // 创建路径记录
+    // 创建路径记录，存储timeArray
     const route = await this.prisma.route.create({
       data: {
         orderId: id,
         points: routePoints,
+        timeArray: t_real,
         currentStep: 0,
         totalSteps: routePoints.length,
-        interval: dto?.interval || 5000,
+        interval: dto?.interval || 5000, // 保留用于向后兼容
       },
     });
 
@@ -241,6 +263,14 @@ export class OrdersService {
       status: OrderStatus.SHIPPING,
       message: '订单已发货，正在运输中',
     });
+
+    // 启动订单配送定时器
+    try {
+      await this.simulatorService.startOrderTimer(id);
+    } catch (error) {
+      console.error(`启动订单 ${updatedOrder.orderNo} 的配送定时器失败:`, error);
+      // 不抛出错误，让订单继续处理
+    }
 
     // 返回订单和路径信息
     return {
@@ -437,7 +467,8 @@ export class OrdersService {
         shipped++;
       } catch (error) {
         failed++;
-        errors.push(`订单 ${orderId} 发货失败: ${error.message}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`订单 ${orderId} 发货失败: ${errorMessage}`);
       }
     }
 

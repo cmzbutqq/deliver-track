@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, Alert } from 'antd'
-import { Order } from '@/types'
+import { Order, OrderStatus } from '@/types'
 import MapComponent from '@/components/map/MapComponent'
 
 interface HeatmapChartProps {
@@ -35,11 +35,11 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
       heatmapRef.current = null
     }
 
-    // 准备热力图数据
-    const deliveredOrders = orders.filter((order) => order.status === 'DELIVERED')
+    // 准备热力图数据：包含待发货、运输中、已送达，排除已取消
+    const validOrders = orders.filter((order) => order.status !== OrderStatus.CANCELLED)
 
-    if (deliveredOrders.length === 0) {
-      setError('暂无已完成订单数据')
+    if (validOrders.length === 0) {
+      setError('暂无订单数据')
       return
     }
 
@@ -50,7 +50,7 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
 
     // 聚合相同位置的订单
     const locationMap = new Map<string, number>()
-    for (const order of deliveredOrders) {
+    for (const order of validOrders) {
       const dest = order.destination as { lng: number; lat: number }
       if (!dest || typeof dest.lng !== 'number' || typeof dest.lat !== 'number') {
         continue
@@ -106,18 +106,46 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
       const latDiff = maxLat - minLat
       const maxDiff = Math.max(lngDiff, latDiff)
 
+      // 设置地图中心点
       map.setCenter([centerLng, centerLat])
-
-      // 根据范围设置合适的缩放级别
-      const zoom = Math.max(8, Math.min(18,
-        maxDiff < 0.01 ? 14 :
-        maxDiff < 0.05 ? 13 :
-        maxDiff < 0.1 ? 12 :
-        maxDiff < 0.5 ? 11 :
-        maxDiff < 1 ? 10 :
-        maxDiff < 2 ? 9 : 8
-      ))
-
+      
+      // 改进的缩放级别计算：确保不会放得太大，能显示整张图
+      // 添加边距系数，确保数据点不会贴边显示
+      const paddingFactor = 1.2 // 20% 的边距
+      const adjustedMaxDiff = maxDiff * paddingFactor
+      
+      let zoom: number
+      if (adjustedMaxDiff < 0.001) {
+        // 范围极小（< 100米），使用适中的缩放级别，不要放太大
+        zoom = 12
+      } else if (adjustedMaxDiff < 0.01) {
+        // 范围很小（< 1公里），使用适中的缩放级别
+        zoom = 11
+      } else if (adjustedMaxDiff < 0.05) {
+        zoom = 10
+      } else if (adjustedMaxDiff < 0.1) {
+        zoom = 9
+      } else if (adjustedMaxDiff < 0.5) {
+        zoom = 8
+      } else if (adjustedMaxDiff < 1) {
+        zoom = 7
+      } else if (adjustedMaxDiff < 2) {
+        zoom = 6
+      } else if (adjustedMaxDiff < 5) {
+        zoom = 5
+      } else if (adjustedMaxDiff < 10) {
+        zoom = 4
+      } else if (adjustedMaxDiff < 20) {
+        zoom = 3
+      } else if (adjustedMaxDiff < 50) {
+        zoom = 2
+      } else {
+        // 范围极大（跨洲或全球），使用最小缩放级别
+        zoom = 1
+      }
+      
+      // 确保缩放级别在合理范围内（1-12），支持更大范围的显示
+      zoom = Math.max(1, Math.min(12, zoom))
       map.setZoom(zoom)
     }
   }

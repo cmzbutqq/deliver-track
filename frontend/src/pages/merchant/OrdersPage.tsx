@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Select, message, Row, Col } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Table, Button, Space, Select, message, Row, Col, Tag } from 'antd'
+import { PlusOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { orderService } from '@/services/orderService'
-import { Order, OrderStatus } from '@/types'
+import { zoneService } from '@/services/zoneService'
+import { Order, OrderStatus, DeliveryZone } from '@/types'
 import OrderDetailModal from '@/components/merchant/OrderDetailModal'
 import BatchActions from '@/components/merchant/BatchActions'
 import OrderListMap from '@/components/map/OrderListMap'
+import { isPointInPolygon } from '@/utils/mapUtils'
 import type { ColumnsType } from 'antd/es/table'
 
 const OrdersPage = () => {
@@ -15,21 +17,81 @@ const OrdersPage = () => {
   const [loading, setLoading] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [statusFilter, setStatusFilter] = useState<OrderStatus | undefined>()
+  const [zoneFilter, setZoneFilter] = useState<string | undefined>()
+  const [zones, setZones] = useState<DeliveryZone[]>([])
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [modalVisible, setModalVisible] = useState(false)
 
+  // 加载配送区域列表
+  useEffect(() => {
+    const loadZones = async () => {
+      const zonesData = await zoneService.getZones()
+      if (!Array.isArray(zonesData)) {
+        throw new Error(`配送区域数据格式错误: 期望数组，实际得到 ${typeof zonesData}`)
+      }
+      setZones(zonesData)
+    }
+    loadZones().catch((error) => {
+      message.error(`加载配送区域失败: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, [])
+
   useEffect(() => {
     loadOrders()
-  }, [statusFilter])
+  }, [statusFilter, zoneFilter])
+
+  // 订单状态排序优先级：运输中 > 待发货 > 已取消 > 已送达
+  const getStatusPriority = (status: OrderStatus): number => {
+    const priorityMap = {
+      [OrderStatus.SHIPPING]: 1,    // 运输中 - 最高优先级
+      [OrderStatus.PENDING]: 2,     // 待发货
+      [OrderStatus.CANCELLED]: 3,   // 已取消
+      [OrderStatus.DELIVERED]: 4,   // 已送达 - 最低优先级
+    }
+    return priorityMap[status] || 999
+  }
 
   const loadOrders = async () => {
     setLoading(true)
-    const data = await orderService.getOrders({ status: statusFilter })
-    if (!Array.isArray(data)) {
-      throw new Error(`订单数据格式错误: 期望数组，实际得到 ${typeof data}. 数据: ${JSON.stringify(data)}`)
+    try {
+      let data: Order[] = []
+      
+      // 如果选择了配送区域，使用区域筛选 API
+      if (zoneFilter) {
+        data = await zoneService.getZoneOrders(zoneFilter)
+        // 如果同时有状态筛选，在前端进行二次筛选
+        if (statusFilter) {
+          data = data.filter((order) => order.status === statusFilter)
+        }
+      } else {
+        // 没有选择区域，使用原来的订单列表 API
+        data = await orderService.getOrders({ status: statusFilter })
+      }
+      
+      if (!Array.isArray(data)) {
+        throw new Error(`订单数据格式错误: 期望数组，实际得到 ${typeof data}. 数据: ${JSON.stringify(data)}`)
+      }
+      
+      // 按状态优先级排序：运输中 > 待发货 > 已取消 > 已送达
+      // 相同状态内按创建时间倒序（最新的在前）
+      data.sort((a, b) => {
+        const priorityDiff = getStatusPriority(a.status) - getStatusPriority(b.status)
+        if (priorityDiff !== 0) {
+          return priorityDiff
+        }
+        // 相同状态，按创建时间倒序
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      })
+      
+      setOrders(data)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '加载订单失败'
+      message.error(errorMessage)
+      setOrders([])
+      throw error
+    } finally {
+      setLoading(false)
     }
-    setOrders(data)
-    setLoading(false)
   }
 
   const handleRowDoubleClick = (record: Order) => {
@@ -41,6 +103,29 @@ const OrdersPage = () => {
     await orderService.shipOrder(id)
     message.success('发货成功')
     loadOrders()
+  }
+
+  // 查找订单所在的配送区域
+  const findOrderZone = (order: Order): DeliveryZone | null => {
+    if (!order.destination || !order.destination.lng || !order.destination.lat) {
+      return null
+    }
+
+    const point = {
+      lng: order.destination.lng,
+      lat: order.destination.lat,
+    }
+
+    for (const zone of zones) {
+      if (zone.boundary && zone.boundary.coordinates && zone.boundary.coordinates[0]) {
+        const polygon = zone.boundary.coordinates[0] as number[][]
+        if (isPointInPolygon(point, polygon)) {
+          return zone
+        }
+      }
+    }
+
+    return null
   }
 
   const columns: ColumnsType<Order> = [
@@ -61,6 +146,27 @@ const OrdersPage = () => {
           CANCELLED: '已取消',
         }
         return statusMap[status] || status
+      },
+    },
+    {
+      title: '可配送状态',
+      key: 'deliveryStatus',
+      width: 150,
+      render: (_: any, record: Order) => {
+        const zone = findOrderZone(record)
+        if (zone) {
+          return (
+            <Tag color="success" icon={<CheckCircleOutlined />}>
+              {zone.name}
+            </Tag>
+          )
+        } else {
+          return (
+            <Tag color="error" icon={<CloseCircleOutlined />}>
+              不可配送
+            </Tag>
+          )
+        }
       },
     },
     {
@@ -102,9 +208,23 @@ const OrdersPage = () => {
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Space>
           <Select
+            placeholder="筛选配送区域"
+            allowClear
+            style={{ width: 180 }}
+            value={zoneFilter}
+            onChange={(value) => setZoneFilter(value)}
+          >
+            {zones.map((zone) => (
+              <Select.Option key={zone.id} value={zone.id}>
+                {zone.name}
+              </Select.Option>
+            ))}
+          </Select>
+          <Select
             placeholder="筛选状态"
             allowClear
             style={{ width: 150 }}
+            value={statusFilter}
             onChange={(value) => setStatusFilter(value)}
           >
             <Select.Option value={OrderStatus.PENDING}>待发货</Select.Option>
@@ -165,4 +285,3 @@ const OrdersPage = () => {
 }
 
 export default OrdersPage
-

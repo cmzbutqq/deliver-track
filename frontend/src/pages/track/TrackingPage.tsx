@@ -54,12 +54,16 @@ const TrackingPage = () => {
       }
       
       // 如果有 route，更新 currentStep
+      // 后端发送的 progress = (currentStep + 1) / points.length * 100
+      // 所以 currentStep = Math.floor((progress / 100) * routePoints.length) - 1
       if (updatedOrder.route && updatedOrder.route.points) {
         const routePoints = updatedOrder.route.points as number[][]
-        const currentStep = Math.floor((data.progress / 100) * routePoints.length) - 1
+        // 根据 progress 计算 currentStep（不提前）
+        const calculatedStep = Math.floor((data.progress / 100) * routePoints.length) - 1
+        const currentStep = Math.max(0, Math.min(calculatedStep, routePoints.length - 1))
         updatedOrder.route = {
           ...updatedOrder.route,
-          currentStep: Math.max(0, currentStep),
+          currentStep,
         }
       }
       

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import MapComponent from '@/components/map/MapComponent'
 import { Order, LocationUpdateEvent, OrderStatus } from '@/types'
-import { createOriginIcon, createDestinationIcon, createVehicleIcon, createPolyline } from '@/utils/mapUtils'
+import { createOriginIcon, createDestinationIcon, createVehicleIcon, createPolyline, calculateVehicleAngle } from '@/utils/mapUtils'
 import { moveSmoothly } from '@/utils/animationUtils'
 import { websocketService } from '@/services/websocketService'
 
@@ -55,6 +55,8 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
     }
   }, [])
 
+  const initializedOrderNoRef = useRef<string | null>(null)
+
   const handleMapReady = useCallback((mapInstance: any, AMapInstance: any) => {
     setMap(mapInstance)
     setAMap(AMapInstance)
@@ -64,77 +66,161 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
 
     const origin = order.origin as { lng: number; lat: number }
     const destination = order.destination as { lng: number; lat: number }
+    const shouldFitView = initializedOrderNoRef.current !== order.orderNo
+    initializedOrderNoRef.current = order.orderNo
 
-    // 创建起点标记
-    originMarkerRef.current = new AMapInstance.Marker({
-      position: [origin.lng, origin.lat],
-      icon: createOriginIcon(AMapInstance),
-      title: '发货地址',
-      map: mapInstance,
-    })
+    // 验证起点和终点数据
+    const isValidCoordinate = (lng: any, lat: any): boolean => {
+      return typeof lng === 'number' && typeof lat === 'number' &&
+             !isNaN(lng) && !isNaN(lat) &&
+             isFinite(lng) && isFinite(lat)
+    }
 
-    // 创建终点标记
-    destinationMarkerRef.current = new AMapInstance.Marker({
-      position: [destination.lng, destination.lat],
-      icon: createDestinationIcon(AMapInstance),
-      title: '收货地址',
-      map: mapInstance,
-    })
+    if (!origin || !isValidCoordinate(origin.lng, origin.lat)) {
+      console.warn('订单起点数据无效，跳过起点标记创建', origin)
+    } else {
+      // 创建起点标记
+      try {
+        originMarkerRef.current = new AMapInstance.Marker({
+          position: [origin.lng, origin.lat],
+          icon: createOriginIcon(AMapInstance),
+          title: '发货地址',
+          map: mapInstance,
+          anchor: 'center', // 设置锚点为中心，让图标中心在路径上
+        })
+      } catch (error) {
+        console.error('创建起点标记失败:', error)
+      }
+    }
+
+    if (!destination || !isValidCoordinate(destination.lng, destination.lat)) {
+      console.warn('订单终点数据无效，跳过终点标记创建', destination)
+    } else {
+      // 创建终点标记
+      try {
+        destinationMarkerRef.current = new AMapInstance.Marker({
+          position: [destination.lng, destination.lat],
+          icon: createDestinationIcon(AMapInstance),
+          title: '收货地址',
+          map: mapInstance,
+          anchor: 'center', // 设置锚点为中心，让图标中心在路径上
+        })
+      } catch (error) {
+        console.error('创建终点标记失败:', error)
+      }
+    }
 
     // 如果有路径，绘制路径线
     if (order.route && order.route.points) {
       const routePoints = order.route.points as number[][]
       
-      // 验证路径点有效性
-      if (routePoints.length < 2) {
-        console.warn(`订单 ${order.orderNo} 的路径点数量不足（${routePoints.length}），跳过路径绘制`)
+      // 验证路径点的有效性
+      const isValidPathPoint = (point: number[]): boolean => {
+        return Array.isArray(point) && point.length >= 2 &&
+               typeof point[0] === 'number' && typeof point[1] === 'number' &&
+               !isNaN(point[0]) && !isNaN(point[1]) &&
+               isFinite(point[0]) && isFinite(point[1])
+      }
+      
+      // 过滤掉无效的路径点
+      const validRoutePoints = routePoints.filter(isValidPathPoint)
+      
+      if (validRoutePoints.length < 2) {
+        console.warn(`订单 ${order.orderNo} 的有效路径点数量不足（${validRoutePoints.length}/${routePoints.length}），跳过路径绘制`)
       } else {
         // 计算已走过的路径和未走过的路径
         let passedPoints: number[][] = []
-        let remainingPoints: number[][] = routePoints
+        let remainingPoints: number[][] = validRoutePoints
         
         if (order.currentLocation && order.route.currentStep !== undefined) {
           const currentIndex = order.route.currentStep
-          passedPoints = routePoints.slice(0, currentIndex + 1)
-          remainingPoints = routePoints.slice(currentIndex)
+          passedPoints = validRoutePoints.slice(0, currentIndex + 1)
+          remainingPoints = validRoutePoints.slice(currentIndex)
         }
         
-        // 已走过的路径（深蓝实线）- 至少需要2个点
+        // 已走过的路径（红色实线）- 至少需要2个点
         if (passedPoints.length >= 2) {
           passedLineRef.current = createPolyline(mapInstance, AMapInstance, passedPoints, {
-            strokeColor: '#1890ff',
+            strokeColor: '#ff4d4f',
             strokeWeight: 4,
             strokeStyle: 'solid',
             zIndex: 10,
           })
         }
         
-        // 未走过的路径（浅灰虚线）- 至少需要2个点
+        // 未走过的路径（蓝色实线）- 至少需要2个点
         if (remainingPoints.length >= 2) {
           remainingLineRef.current = createPolyline(mapInstance, AMapInstance, remainingPoints, {
-            strokeColor: '#d9d9d9',
-            strokeWeight: 3,
-            strokeStyle: 'dashed',
-            lineDash: [10, 5],
+            strokeColor: '#1890ff',
+            strokeWeight: 4,
+            strokeStyle: 'solid',
             zIndex: 9,
           })
         }
       }
     }
 
-    // 如果有当前位置，创建车辆标记
-    if (order.currentLocation && order.status === OrderStatus.SHIPPING) {
-      vehicleMarkerRef.current = new AMapInstance.Marker({
-        position: [order.currentLocation.lng, order.currentLocation.lat],
-        icon: createVehicleIcon(AMapInstance),
-        title: '当前位置',
-        map: mapInstance,
+    // 如果有路径和当前步骤，创建车辆标记（基于路径点而不是 currentLocation）
+    if (order.route && order.route.points && order.route.currentStep !== undefined && order.status === OrderStatus.SHIPPING) {
+      const routePoints = order.route.points as number[][]
+      const validRoutePoints = routePoints.filter((point: number[]) => {
+        return Array.isArray(point) && point.length >= 2 &&
+               typeof point[0] === 'number' && typeof point[1] === 'number' &&
+               !isNaN(point[0]) && !isNaN(point[1]) &&
+               isFinite(point[0]) && isFinite(point[1])
       })
+      
+      if (validRoutePoints.length >= 2) {
+        const currentStep = order.route.currentStep
+        // 确保 currentStep 在有效范围内
+        const validStep = Math.min(Math.max(0, currentStep), validRoutePoints.length - 1)
+        const currentPoint = validRoutePoints[validStep]
+        
+        if (currentPoint && Array.isArray(currentPoint) && currentPoint.length >= 2) {
+          const currentLng = currentPoint[0]
+          const currentLat = currentPoint[1]
+          
+          if (isValidCoordinate(currentLng, currentLat)) {
+            try {
+              // 计算箭头角度（基于 currentStep）
+              let angle = 0
+              const progress = validStep >= validRoutePoints.length - 1
+                ? 100
+                : (validStep / (validRoutePoints.length - 1)) * 100
+              const calculatedAngle = calculateVehicleAngle(
+                validRoutePoints,
+                progress
+              )
+              if (calculatedAngle !== null) {
+                angle = calculatedAngle
+              }
+              
+              vehicleMarkerRef.current = new AMapInstance.Marker({
+                position: [currentLng, currentLat],
+                icon: createVehicleIcon(AMapInstance, angle),
+                title: '当前位置',
+                map: mapInstance,
+                anchor: 'center', // 设置锚点为中心，让图标中心在路径上
+              })
+            } catch (error) {
+              console.error('创建车辆标记失败:', error)
+            }
+          } else {
+            console.warn('路径点坐标无效，跳过车辆标记创建', currentPoint)
+          }
+        }
+      }
     }
 
     // 调整视野以包含起点和终点
     // setFitView 需要传入覆盖物对象数组，而不是坐标数组
-    const overlays: any[] = [originMarkerRef.current, destinationMarkerRef.current]
+    const overlays: any[] = []
+    if (originMarkerRef.current) {
+      overlays.push(originMarkerRef.current)
+    }
+    if (destinationMarkerRef.current) {
+      overlays.push(destinationMarkerRef.current)
+    }
     
     // 如果有路径线，也加入视野调整
     if (passedLineRef.current) {
@@ -144,32 +230,76 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
       overlays.push(remainingLineRef.current)
     }
     
-    try {
-      mapInstance.setFitView(overlays, false, [20, 20, 20, 20])
-    } catch (error) {
-      // 如果 setFitView 失败，使用备用方案：手动计算中心点和缩放级别
-      const lngDiff = Math.abs(destination.lng - origin.lng)
-      const latDiff = Math.abs(destination.lat - origin.lat)
-      const maxDiff = Math.max(lngDiff, latDiff)
-      
-      const centerLng = (origin.lng + destination.lng) / 2
-      const centerLat = (origin.lat + destination.lat) / 2
-      
-      mapInstance.setCenter([centerLng, centerLat])
-      
-      // 根据范围设置合适的缩放级别
-      const zoom = Math.max(8, Math.min(18,
-        maxDiff < 0.01 ? 14 :
-        maxDiff < 0.05 ? 13 :
-        maxDiff < 0.1 ? 12 :
-        maxDiff < 0.5 ? 11 :
-        maxDiff < 1 ? 10 :
-        maxDiff < 2 ? 9 : 8
-      ))
-      
-      mapInstance.setZoom(zoom)
+    // 如果有车辆标记，也加入视野调整
+    if (vehicleMarkerRef.current) {
+      overlays.push(vehicleMarkerRef.current)
     }
-  }, [order, clearAllMarkers])
+    
+    // 只在首次加载或订单号变化时调整视野，状态刷新时不重新缩放
+    if (shouldFitView) {
+      try {
+        if (overlays.length > 0) {
+          mapInstance.setFitView(overlays, false, [20, 20, 20, 20])
+        }
+      } catch (error) {
+        // 如果 setFitView 失败，使用备用方案：手动计算中心点和缩放级别
+        // 验证 origin 和 destination 的有效性
+        if (isValidCoordinate(origin.lng, origin.lat) && isValidCoordinate(destination.lng, destination.lat)) {
+          const lngDiff = Math.abs(destination.lng - origin.lng)
+          const latDiff = Math.abs(destination.lat - origin.lat)
+          const maxDiff = Math.max(lngDiff, latDiff)
+          
+          const centerLng = (origin.lng + destination.lng) / 2
+          const centerLat = (origin.lat + destination.lat) / 2
+          
+          if (isValidCoordinate(centerLng, centerLat)) {
+            mapInstance.setCenter([centerLng, centerLat])
+          } else {
+            console.warn('计算的中心点无效，使用默认中心点')
+            mapInstance.setCenter([116.397428, 39.90923]) // 北京天安门
+          }
+          
+          // 根据范围设置合适的缩放级别
+          let zoom: number
+          if (maxDiff < 0.01) { // < 1公里
+            zoom = 14
+          } else if (maxDiff < 0.05) { // < 5公里
+            zoom = 13
+          } else if (maxDiff < 0.1) { // < 10公里
+            zoom = 12
+          } else if (maxDiff < 0.5) { // < 50公里
+            zoom = 11
+          } else if (maxDiff < 1) { // < 100公里
+            zoom = 10
+          } else if (maxDiff < 2) { // < 200公里
+            zoom = 9
+          } else if (maxDiff < 5) { // < 500公里
+            zoom = 8
+          } else if (maxDiff < 10) { // < 1000公里
+            zoom = 7
+          } else if (maxDiff < 20) { // < 2000公里
+            zoom = 6
+          } else if (maxDiff < 50) { // < 5000公里
+            zoom = 5
+          } else if (maxDiff < 100) { // < 10000公里
+            zoom = 4
+          } else if (maxDiff < 200) { // < 20000公里
+            zoom = 3
+          } else if (maxDiff < 500) { // < 50000公里
+            zoom = 2
+          } else { // >= 50000公里
+            zoom = 1
+          }
+          zoom = Math.max(1, Math.min(18, zoom))
+          
+          mapInstance.setZoom(zoom)
+        } else {
+          console.warn('起点或终点坐标无效，使用默认中心点')
+          mapInstance.setCenter([116.397428, 39.90923]) // 北京天安门
+        }
+      }
+    }
+  }, [order.orderNo, clearAllMarkers]) // 只在订单号变化时重新初始化地图和缩放
 
   // WebSocket 订阅和事件监听 - 只在 map、AMap 或 orderNo 改变时重新执行
   useEffect(() => {
@@ -200,23 +330,101 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
       const currentOrder = orderRef.current
       if (data.orderNo !== currentOrder.orderNo) return
 
-      if (data.location) {
-        // 如果车辆标记不存在，创建它
-        if (!vehicleMarkerRef.current && map && AMap) {
-          vehicleMarkerRef.current = new AMap.Marker({
-            position: [data.location.lng, data.location.lat],
-            icon: createVehicleIcon(AMap),
-            title: '当前位置',
-            map: map,
-          })
-        } else if (vehicleMarkerRef.current) {
-          // 如果已存在，平滑移动车辆
-          const currentPos = vehicleMarkerRef.current.getPosition()
-          const currentPosArray: [number, number] = [currentPos.getLng(), currentPos.getLat()]
-          const newPos: [number, number] = [data.location.lng, data.location.lat]
+      // 基于路径点和 progress 计算箭头位置和角度
+      if (currentOrder.route && currentOrder.route.points) {
+        const routePoints = currentOrder.route.points as number[][]
+        const isValidPathPoint = (point: number[]): boolean => {
+          return Array.isArray(point) && point.length >= 2 &&
+                 typeof point[0] === 'number' && typeof point[1] === 'number' &&
+                 !isNaN(point[0]) && !isNaN(point[1]) &&
+                 isFinite(point[0]) && isFinite(point[1])
+        }
+        const validRoutePoints = routePoints.filter(isValidPathPoint)
+        
+        if (validRoutePoints.length >= 2) {
+          // 验证坐标有效性
+          const isValidCoordinate = (lng: any, lat: any): boolean => {
+            return typeof lng === 'number' && typeof lat === 'number' &&
+                   !isNaN(lng) && !isNaN(lat) &&
+                   isFinite(lng) && isFinite(lat)
+          }
+          
+          // 根据 progress 计算当前步骤索引（基于 currentStep，不提前）
+          const progress = data.progress || 0
+          const currentIndex = Math.floor((progress / 100) * validRoutePoints.length)
+          const validIndex = Math.min(Math.max(0, currentIndex), validRoutePoints.length - 1)
+          const currentPoint = validRoutePoints[validIndex]
+          
+          if (currentPoint && Array.isArray(currentPoint) && currentPoint.length >= 2) {
+            const newLng = currentPoint[0]
+            const newLat = currentPoint[1]
+            
+            if (!isValidCoordinate(newLng, newLat)) {
+              console.warn('路径点坐标无效，跳过更新', currentPoint)
+              return
+            }
+            
+            // 计算箭头角度（基于 currentStep）
+            let angle = 0
+            const calculatedAngle = calculateVehicleAngle(
+              validRoutePoints,
+              progress
+            )
+            if (calculatedAngle !== null) {
+              angle = calculatedAngle
+            }
+            
+            // 如果车辆标记不存在，创建它
+            if (!vehicleMarkerRef.current && map && AMap) {
+              try {
+                vehicleMarkerRef.current = new AMap.Marker({
+                  position: [newLng, newLat],
+                  icon: createVehicleIcon(AMap, angle),
+                  title: '当前位置',
+                  map: map,
+                  anchor: 'center', // 设置锚点为中心，让图标中心在路径上
+                })
+              } catch (error) {
+                console.error('创建车辆标记失败:', error)
+              }
+            } else if (vehicleMarkerRef.current) {
+              // 如果已存在，更新位置和角度
+              try {
+                const currentPos = vehicleMarkerRef.current.getPosition()
+                const currentLng = currentPos.getLng()
+                const currentLat = currentPos.getLat()
+                
+                // 验证当前位置的有效性
+                if (!isValidCoordinate(currentLng, currentLat)) {
+                  // 如果当前位置无效，直接设置新位置和角度
+                  vehicleMarkerRef.current.setPosition([newLng, newLat])
+                  vehicleMarkerRef.current.setIcon(createVehicleIcon(AMap, angle))
+                } else {
+                  const currentPosArray: [number, number] = [currentLng, currentLat]
+                  const newPos: [number, number] = [newLng, newLat]
 
-          // 平滑移动车辆
-          moveSmoothly(vehicleMarkerRef.current, currentPosArray, newPos, 2000)
+                  // 平滑移动车辆（包括角度更新）
+                  moveSmoothly(
+                    vehicleMarkerRef.current,
+                    currentPosArray,
+                    newPos,
+                    2000,
+                    angle,
+                    AMap
+                  )
+                }
+              } catch (error) {
+                console.error('更新车辆位置失败:', error)
+                // 如果更新失败，尝试直接设置位置和角度
+                try {
+                  vehicleMarkerRef.current.setPosition([newLng, newLat])
+                  vehicleMarkerRef.current.setIcon(createVehicleIcon(AMap, angle))
+                } catch (setError) {
+                  console.error('直接设置车辆位置也失败:', setError)
+                }
+              }
+            }
+          }
         }
       }
 
@@ -224,11 +432,31 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
       if (currentOrder.route && currentOrder.route.points) {
         const routePoints = currentOrder.route.points as number[][]
         
-        // 使用 progress 计算当前索引，确保与后端同步
-        const currentIndex = Math.floor((data.progress / 100) * routePoints.length)
+        // 验证路径点的有效性
+        const isValidPathPoint = (point: number[]): boolean => {
+          return Array.isArray(point) && point.length >= 2 &&
+                 typeof point[0] === 'number' && typeof point[1] === 'number' &&
+                 !isNaN(point[0]) && !isNaN(point[1]) &&
+                 isFinite(point[0]) && isFinite(point[1])
+        }
         
-        const passedPoints = routePoints.slice(0, currentIndex + 1)
-        const remainingPoints = routePoints.slice(currentIndex)
+        // 过滤掉无效的路径点
+        const validRoutePoints = routePoints.filter(isValidPathPoint)
+        
+        if (validRoutePoints.length < 2) {
+          console.warn('有效路径点数量不足，跳过路径更新')
+          return
+        }
+        
+        // 使用 progress 计算当前索引（基于 currentStep，不提前）
+        // progress 是基于 (currentStep + 1) / totalSteps，所以需要减1来得到 currentStep
+        const progress = data.progress || 0
+        const currentIndex = Math.floor((progress / 100) * validRoutePoints.length)
+        // 确保索引在有效范围内
+        const validIndex = Math.min(Math.max(0, currentIndex), validRoutePoints.length - 1)
+        
+        const passedPoints = validRoutePoints.slice(0, validIndex + 1)
+        const remainingPoints = validRoutePoints.slice(validIndex)
         
         // 更新已走过的路径（至少需要2个点）
         if (passedPoints.length >= 2) {
@@ -241,7 +469,7 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
               console.warn('setPath 失败，重新创建已走过路径:', error)
               passedLineRef.current.setMap(null)
               passedLineRef.current = createPolyline(map, AMap, passedPoints, {
-                strokeColor: '#1890ff',
+                strokeColor: '#ff4d4f',
                 strokeWeight: 4,
                 strokeStyle: 'solid',
                 zIndex: 10,
@@ -250,7 +478,7 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
           } else if (map && AMap) {
             // 如果之前没有创建，现在创建
             passedLineRef.current = createPolyline(map, AMap, passedPoints, {
-              strokeColor: '#1890ff',
+              strokeColor: '#ff4d4f',
               strokeWeight: 4,
               strokeStyle: 'solid',
               zIndex: 10,
@@ -269,24 +497,23 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
               console.warn('setPath 失败，重新创建未走过路径:', error)
               remainingLineRef.current.setMap(null)
               remainingLineRef.current = createPolyline(map, AMap, remainingPoints, {
-                strokeColor: '#d9d9d9',
-                strokeWeight: 3,
-                strokeStyle: 'dashed',
-                lineDash: [10, 5],
+                strokeColor: '#1890ff',
+                strokeWeight: 4,
+                strokeStyle: 'solid',
                 zIndex: 9,
               })
             }
           } else if (map && AMap) {
             // 如果之前没有创建，现在创建
             remainingLineRef.current = createPolyline(map, AMap, remainingPoints, {
-              strokeColor: '#d9d9d9',
-              strokeWeight: 3,
-              strokeStyle: 'dashed',
-              lineDash: [10, 5],
+              strokeColor: '#1890ff',
+              strokeWeight: 4,
+              strokeStyle: 'solid',
               zIndex: 9,
             })
           }
         }
+        
       }
 
       // 使用 ref 调用回调，避免依赖项问题

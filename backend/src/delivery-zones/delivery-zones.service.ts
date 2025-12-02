@@ -12,7 +12,7 @@ export class DeliveryZonesService {
         merchantId,
         name: dto.name,
         boundary: dto.boundary,
-        timeLimit: dto.timeLimit || 24,
+        logistics: dto.logistics || '顺丰速运',
       },
     });
   }
@@ -102,6 +102,9 @@ export class DeliveryZonesService {
 
     const orders = await this.prisma.order.findMany({
       where: { merchantId },
+      include: {
+        route: true,
+      },
     });
 
     // 过滤出在配送区域内的订单
@@ -136,4 +139,3 @@ export class DeliveryZonesService {
     return inside;
   }
 }
-

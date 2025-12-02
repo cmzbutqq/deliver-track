@@ -114,14 +114,37 @@ const ZoneEditor = ({ zone, onSave, onCancel }: ZoneEditorProps) => {
         mapRef.current.setCenter([centerLng, centerLat])
         
         // 根据范围设置合适的缩放级别
-        const zoom = Math.max(8, Math.min(18,
-          maxDiff < 0.01 ? 14 :
-          maxDiff < 0.05 ? 13 :
-          maxDiff < 0.1 ? 12 :
-          maxDiff < 0.5 ? 11 :
-          maxDiff < 1 ? 10 :
-          maxDiff < 2 ? 9 : 8
-        ))
+        let zoom: number
+        if (maxDiff < 0.01) { // < 1公里
+          zoom = 14
+        } else if (maxDiff < 0.05) { // < 5公里
+          zoom = 13
+        } else if (maxDiff < 0.1) { // < 10公里
+          zoom = 12
+        } else if (maxDiff < 0.5) { // < 50公里
+          zoom = 11
+        } else if (maxDiff < 1) { // < 100公里
+          zoom = 10
+        } else if (maxDiff < 2) { // < 200公里
+          zoom = 9
+        } else if (maxDiff < 5) { // < 500公里
+          zoom = 8
+        } else if (maxDiff < 10) { // < 1000公里
+          zoom = 7
+        } else if (maxDiff < 20) { // < 2000公里
+          zoom = 6
+        } else if (maxDiff < 50) { // < 5000公里
+          zoom = 5
+        } else if (maxDiff < 100) { // < 10000公里
+          zoom = 4
+        } else if (maxDiff < 200) { // < 20000公里
+          zoom = 3
+        } else if (maxDiff < 500) { // < 50000公里
+          zoom = 2
+        } else { // >= 50000公里
+          zoom = 1
+        }
+        zoom = Math.max(1, Math.min(18, zoom))
         mapRef.current.setZoom(zoom)
       }
     }
