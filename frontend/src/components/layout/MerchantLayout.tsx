@@ -8,7 +8,6 @@ import {
   LogoutOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '@/stores/authStore'
-import ThemeSwitch from '@/components/common/ThemeSwitch'
 import type { MenuProps } from 'antd'
 import './MerchantLayout.css'
 
@@ -71,6 +70,7 @@ const MerchantLayout = () => {
       <Sider width={200} className="merchant-sider">
         <div className="logo">物流配送平台</div>
         <Menu
+          theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
@@ -83,7 +83,6 @@ const MerchantLayout = () => {
             <span className="merchant-name">{user?.name || user?.username || '商家'}</span>
           </div>
           <div className="header-right">
-            <ThemeSwitch />
             <Dropdown
               menu={{
                 items: userMenuItems,

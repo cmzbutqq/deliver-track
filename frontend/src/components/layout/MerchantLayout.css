@@ -6,6 +6,37 @@
   background: #001529;
 }
 
+.merchant-sider .ant-menu {
+  background: #001529;
+  border-right: none;
+}
+
+.merchant-sider .ant-menu-item {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.merchant-sider .ant-menu-item:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.merchant-sider .ant-menu-item-selected {
+  color: #fff;
+  background: #1890ff;
+}
+
+.merchant-sider .ant-menu-item-selected:hover {
+  background: #40a9ff;
+}
+
+.merchant-sider .ant-menu-item-icon {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.merchant-sider .ant-menu-item-selected .ant-menu-item-icon {
+  color: #fff;
+}
+
 .logo {
   height: 64px;
   line-height: 64px;

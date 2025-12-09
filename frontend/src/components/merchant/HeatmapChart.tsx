@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Card, Alert } from 'antd'
-import { Order, OrderStatus } from '@/types'
+import { Order } from '@/types'
 import MapComponent from '@/components/map/MapComponent'
 
 interface HeatmapChartProps {
@@ -35,8 +35,12 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
       heatmapRef.current = null
     }
 
-    // 准备热力图数据：包含待发货、运输中、已送达，排除已取消
-    const validOrders = orders.filter((order) => order.status !== OrderStatus.CANCELLED)
+    // 准备热力图数据：使用所有传入的订单（已根据状态筛选）
+    // 过滤掉没有有效目的地的订单
+    const validOrders = orders.filter((order) => {
+      const dest = order.destination as { lng: number; lat: number }
+      return dest && typeof dest.lng === 'number' && typeof dest.lat === 'number'
+    })
 
     if (validOrders.length === 0) {
       setError('暂无订单数据')
@@ -75,7 +79,6 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
     // 计算统计数据，用于调整 max 值
     const counts = heatmapData.map((d) => d.count)
     const maxCount = Math.max(...counts)
-    const avgCount = counts.reduce((sum, count) => sum + count, 0) / counts.length
     
     // 调整 max 值：使用最大值和平均值的组合，让单个订单不会直接变红
     // 如果最大值很大，使用最大值；如果最大值较小，使用更大的倍数

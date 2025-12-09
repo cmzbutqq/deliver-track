@@ -205,6 +205,13 @@ const DashboardPage = () => {
     })
   }
 
+  // 判断是否应该显示配送区域和物流公司统计
+  // 这些统计只对已送达订单有意义，所以只在无筛选或筛选"已完成"时显示
+  const shouldShowStatistics = () => {
+    // 无筛选或筛选"已完成"时显示
+    return !statusFilter || statusFilter === OrderStatus.DELIVERED
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -287,17 +294,19 @@ const DashboardPage = () => {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={24}>
-          {zoneStats.length > 0 || logisticsStats.length > 0 ? (
-            <TimeAnalysisChart zoneData={zoneStats} logisticsData={logisticsStats} />
-          ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
-              暂无统计数据
-            </div>
-          )}
-        </Col>
-      </Row>
+      {shouldShowStatistics() && (
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col xs={24} lg={24}>
+            {zoneStats.length > 0 || logisticsStats.length > 0 ? (
+              <TimeAnalysisChart zoneData={zoneStats} logisticsData={logisticsStats} />
+            ) : (
+              <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+                暂无统计数据
+              </div>
+            )}
+          </Col>
+        </Row>
+      )}
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} lg={24}>

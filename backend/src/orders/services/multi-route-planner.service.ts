@@ -16,11 +16,11 @@ interface RouteInfo {
 
 /**
  * 多点配送路径规划服务
- * 实现订单聚类（R=10km）和最近邻路径规划
+ * 实现订单聚类（R=100km）和最近邻路径规划
  */
 @Injectable()
 export class MultiRoutePlannerService {
-  private readonly CLUSTER_RADIUS_KM = 10; // 预设半径 10km
+  private readonly CLUSTER_RADIUS_KM = 100; // 预设半径 100km
   private readonly COORDINATE_TOLERANCE = 0.0001; // 坐标匹配容差
 
   constructor(private routeQueueService: RouteQueueService) {}
@@ -72,7 +72,7 @@ export class MultiRoutePlannerService {
   }
 
   /**
-   * 订单聚类（贪心算法，R=10km）
+   * 订单聚类（贪心算法，R=100km）
    */
   clusterOrders(
     orders: OrderWithDestination[],
@@ -86,7 +86,7 @@ export class MultiRoutePlannerService {
       const seed = unassigned.shift()!;
       const cluster: OrderWithDestination[] = [seed];
 
-      // 找出距离种子点 ≤ 10km 的所有未分配订单
+      // 找出距离种子点 ≤ 100km 的所有未分配订单
       for (let i = unassigned.length - 1; i >= 0; i--) {
         const order = unassigned[i];
         const distance = this.getDistanceBetweenPoints(

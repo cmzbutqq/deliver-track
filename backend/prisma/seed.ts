@@ -595,17 +595,20 @@ async function main() {
   };
 
   // 生成订单数据
-  const totalOrders = 100;
+  const totalOrders = 200;
   const statusDistribution = {
-    [OrderStatus.PENDING]: Math.floor(totalOrders * 0.60),   // 60个
-    [OrderStatus.SHIPPING]: Math.floor(totalOrders * 0.20), // 20个
-    [OrderStatus.DELIVERED]: Math.floor(totalOrders * 0.15), // 15个
-    [OrderStatus.CANCELLED]: Math.floor(totalOrders * 0.05), // 5个
+    [OrderStatus.CANCELLED]: 10,   // 已取消 10个
+    [OrderStatus.DELIVERED]: 80,   // 已完成 80个
+    [OrderStatus.SHIPPING]: 10,    // 运输中 10个
+    [OrderStatus.PENDING]: 100,    // 待发货 100个
   };
 
   // 确保总数正确
   const actualTotal = Object.values(statusDistribution).reduce((a, b) => a + b, 0);
-  statusDistribution[OrderStatus.PENDING] += totalOrders - actualTotal;
+  if (actualTotal !== totalOrders) {
+    // 如果总数不对，调整待发货数量
+    statusDistribution[OrderStatus.PENDING] += totalOrders - actualTotal;
+  }
 
   console.log('\n📦 开始生成订单数据...');
   console.log(`   状态分布: PENDING(${statusDistribution[OrderStatus.PENDING]}), SHIPPING(${statusDistribution[OrderStatus.SHIPPING]}), DELIVERED(${statusDistribution[OrderStatus.DELIVERED]}), CANCELLED(${statusDistribution[OrderStatus.CANCELLED]})`);
