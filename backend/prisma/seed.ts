@@ -247,7 +247,7 @@ class RouteQueue {
       }
 
       // 如果点太多，进行采样（保留每 N 个点），同时同步采样时间数组
-      const sampled = this.samplePointsWithTime(points, timeArray, 50);
+      const sampled = this.samplePointsWithTime(points, timeArray, 200);
       return sampled;
     } catch (error) {
       throw error;
@@ -553,6 +553,9 @@ async function main() {
       ],
     };
 
+    // 随机选择物流公司
+    const randomLogistics = logisticsCompanies[Math.floor(Math.random() * logisticsCompanies.length)];
+
     const existingZone = await prisma.deliveryZone.findFirst({
       where: {
         merchantId: merchant.id,
@@ -565,7 +568,7 @@ async function main() {
           where: { id: existingZone.id },
           data: {
             boundary,
-            logistics: '顺丰速运', // 默认物流公司
+            logistics: randomLogistics.name, // 随机物流公司
           },
         })
       : await prisma.deliveryZone.create({
@@ -573,7 +576,7 @@ async function main() {
             merchantId: merchant.id,
             name: zoneData.name,
             boundary,
-            logistics: '顺丰速运', // 默认物流公司
+            logistics: randomLogistics.name, // 随机物流公司
           },
         });
 

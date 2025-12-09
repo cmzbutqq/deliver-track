@@ -124,7 +124,7 @@ const TrackingPage = () => {
                 {order.route && (
                   <div>
                     <div>进度: {progress.toFixed(0)}%</div>
-                    <Progress percent={progress} />
+                    <Progress percent={progress} showInfo={false} />
                   </div>
                 )}
                 <div>物流公司: {order.logistics}</div>

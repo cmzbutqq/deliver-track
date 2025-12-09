@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { List, Button, message, Row, Col, Modal } from 'antd'
+import { List, Button, message, Row, Col, Modal, Tag } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { zoneService } from '@/services/zoneService'
 import { DeliveryZone } from '@/types'
@@ -51,7 +51,7 @@ const ZonesPage = () => {
       type: 'Polygon'
       coordinates: number[][][]
     }
-    timeLimit: number
+    logistics: string
   }) => {
     if (editingZone) {
       await zoneService.updateZone(editingZone.id, data)
@@ -74,7 +74,7 @@ const ZonesPage = () => {
       </div>
 
       <Row gutter={16}>
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={12}>
           <List
             loading={loading}
             dataSource={zones}
@@ -87,13 +87,17 @@ const ZonesPage = () => {
               >
                 <List.Item.Meta
                   title={zone.name}
-                  description={`配送时效: ${zone.timeLimit}小时`}
+                  description={
+                    <span>
+                      物流公司: <Tag color="blue">{zone.logistics || '未设置'}</Tag>
+                    </span>
+                  }
                 />
               </List.Item>
             )}
           />
         </Col>
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={12}>
           {editorVisible && (
             <ZoneEditor
               zone={editingZone}

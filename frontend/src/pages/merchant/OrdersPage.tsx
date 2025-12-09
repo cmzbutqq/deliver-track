@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Select, message, Row, Col, Tag } from 'antd'
+import { Table, Button, Space, Select, message, Row, Col, Tag, Tooltip } from 'antd'
 import { PlusOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { orderService } from '@/services/orderService'
@@ -128,16 +128,23 @@ const OrdersPage = () => {
     return null
   }
 
+  // 格式化创建时间，使用更紧凑的格式
+  const formatDateTime = (time: string): string => {
+    const date = new Date(time)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}/${month}/${day} ${hours}:${minutes}`
+  }
+
   const columns: ColumnsType<Order> = [
-    {
-      title: '订单号',
-      dataIndex: 'orderNo',
-      key: 'orderNo',
-    },
     {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status: OrderStatus) => {
         const statusMap = {
           PENDING: '待发货',
@@ -151,7 +158,7 @@ const OrdersPage = () => {
     {
       title: '可配送状态',
       key: 'deliveryStatus',
-      width: 150,
+      width: 140,
       render: (_: any, record: Order) => {
         const zone = findOrderZone(record)
         if (zone) {
@@ -170,27 +177,63 @@ const OrdersPage = () => {
       },
     },
     {
+      title: '订单号',
+      dataIndex: 'orderNo',
+      key: 'orderNo',
+      width: 140,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (text: string) => (
+        <Tooltip placement="topLeft" title={text}>
+          <span style={{ fontFamily: 'monospace' }}>{text}</span>
+        </Tooltip>
+      ),
+    },
+    {
       title: '收货人',
       dataIndex: 'receiverName',
       key: 'receiverName',
+      width: 100,
+      ellipsis: true,
     },
     {
       title: '收货地址',
       dataIndex: 'receiverAddress',
       key: 'receiverAddress',
-      ellipsis: true,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (text: string) => (
+        <Tooltip placement="topLeft" title={text}>
+          {text}
+        </Tooltip>
+      ),
     },
     {
       title: '金额',
       dataIndex: 'amount',
       key: 'amount',
+      width: 100,
+      align: 'right',
       render: (amount: number) => `¥${amount.toFixed(2)}`,
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      render: (time: string) => new Date(time).toLocaleString(),
+      width: 140,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (time: string) => {
+        const formatted = formatDateTime(time)
+        return (
+          <Tooltip placement="topLeft" title={new Date(time).toLocaleString()}>
+            <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{formatted}</span>
+          </Tooltip>
+        )
+      },
     },
   ]
 
@@ -247,18 +290,19 @@ const OrdersPage = () => {
       </div>
 
       <Row gutter={16}>
-        <Col xs={24} lg={8}>
+        <Col xs={24} lg={12}>
           <div style={{ marginBottom: 16 }}>
             <OrderListMap selectedOrders={selectedOrders} />
           </div>
         </Col>
-        <Col xs={24} lg={16}>
+        <Col xs={24} lg={12}>
           <Table
             rowSelection={rowSelection}
             columns={columns}
             dataSource={orders}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 'max-content' }}
             onRow={(record) => ({
               onDoubleClick: () => handleRowDoubleClick(record),
             })}

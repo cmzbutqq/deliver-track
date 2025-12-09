@@ -19,7 +19,7 @@ export const zoneService = {
       type: 'Polygon'
       coordinates: number[][][]
     }
-    timeLimit?: number
+    logistics?: string
   }): Promise<DeliveryZone> {
     return api.post('/delivery-zones', data)
   },
@@ -33,7 +33,7 @@ export const zoneService = {
         type: 'Polygon'
         coordinates: number[][][]
       }
-      timeLimit?: number
+      logistics?: string
     }
   ): Promise<DeliveryZone> {
     return api.patch(`/delivery-zones/${id}`, data)

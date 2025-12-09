@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Form, Input, InputNumber, Button, Space, message } from 'antd'
+import { Form, Input, Select, Button, Space, message } from 'antd'
 import MapComponent from '@/components/map/MapComponent'
-import { DeliveryZone } from '@/types'
+import { DeliveryZone, LogisticsCompany } from '@/types'
+import { logisticsService } from '@/services/logisticsService'
 
 interface ZoneEditorProps {
   zone?: DeliveryZone
@@ -11,7 +12,7 @@ interface ZoneEditorProps {
       type: 'Polygon'
       coordinates: number[][][]
     }
-    timeLimit: number
+    logistics: string
   }) => Promise<void>
   onCancel: () => void
 }
@@ -24,15 +25,34 @@ const ZoneEditor = ({ zone, onSave, onCancel }: ZoneEditorProps) => {
   const editorRef = useRef<any>(null)
   const clickHandlerRef = useRef<any>(null)
   const [isDrawing, setIsDrawing] = useState(false)
+  const [logisticsCompanies, setLogisticsCompanies] = useState<LogisticsCompany[]>([])
+
+  useEffect(() => {
+    const loadLogisticsCompanies = async () => {
+      try {
+        const data = await logisticsService.getLogisticsCompanies()
+        if (!Array.isArray(data)) {
+          throw new Error(`物流公司数据格式错误: 期望数组，实际得到 ${typeof data}`)
+        }
+        setLogisticsCompanies(data)
+      } catch (error) {
+        message.error(`加载物流公司失败: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    loadLogisticsCompanies()
+  }, [])
 
   useEffect(() => {
     if (zone) {
       form.setFieldsValue({
         name: zone.name,
-        timeLimit: zone.timeLimit,
+        logistics: zone.logistics || '顺丰速运',
       })
     } else {
       form.resetFields()
+      form.setFieldsValue({
+        logistics: '顺丰速运', // 设置默认值
+      })
     }
   }, [zone, form])
 
@@ -368,7 +388,7 @@ const ZoneEditor = ({ zone, onSave, onCancel }: ZoneEditorProps) => {
         type: 'Polygon',
         coordinates: [coords],
       },
-      timeLimit: values.timeLimit,
+      logistics: values.logistics,
     })
   }
 
@@ -384,11 +404,17 @@ const ZoneEditor = ({ zone, onSave, onCancel }: ZoneEditorProps) => {
         </Form.Item>
 
         <Form.Item
-          name="timeLimit"
-          label="配送时效（小时）"
-          rules={[{ required: true, message: '请输入配送时效' }]}
+          name="logistics"
+          label="物流公司"
+          rules={[{ required: true, message: '请选择物流公司' }]}
         >
-          <InputNumber min={1} placeholder="请输入配送时效" style={{ width: '100%' }} />
+          <Select placeholder="请选择物流公司" style={{ width: '100%' }}>
+            {logisticsCompanies.map((company) => (
+              <Select.Option key={company.id} value={company.name}>
+                {company.name}
+              </Select.Option>
+            ))}
+          </Select>
         </Form.Item>
 
         <Form.Item>

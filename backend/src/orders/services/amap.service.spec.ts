@@ -242,8 +242,8 @@ describe('AmapService', () => {
 
       const result = await service.getRoute('116,39', '116.2,39.2');
 
-      // 应该采样到 50 个点左右（允许 ±1 的误差）
-      expect(result.points.length).toBeLessThanOrEqual(51);
+      // 应该采样到 200 个点左右（允许 ±1 的误差）
+      expect(result.points.length).toBeLessThanOrEqual(201);
       expect(result.points[0]).toEqual([116, 39]); // 保留起点
       expect(result.points[result.points.length - 1]).toEqual([116.199, 39.199]); // 保留终点
       expect(result.timeArray.length).toBe(result.points.length);

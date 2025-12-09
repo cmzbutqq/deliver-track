@@ -14,15 +14,18 @@ interface TrackingMapProps {
 const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapProps) => {
   const [map, setMap] = useState<any>(null)
   const [AMap, setAMap] = useState<any>(null)
+  const [showTraffic, setShowTraffic] = useState(false)
   const originMarkerRef = useRef<any>(null)
   const destinationMarkerRef = useRef<any>(null)
   const vehicleMarkerRef = useRef<any>(null)
   const passedLineRef = useRef<any>(null)
   const remainingLineRef = useRef<any>(null)
+  const trafficLayerRef = useRef<any>(null)
   const orderRef = useRef<Order>(order)
   const subscribedOrderNoRef = useRef<string | null>(null)
   const onLocationUpdateRef = useRef(onLocationUpdate)
   const onStatusUpdateRef = useRef(onStatusUpdate)
+  const lastUpdateTimeRef = useRef<number | null>(null)
 
   // 保持最新的 order 和回调函数引用
   useEffect(() => {
@@ -52,6 +55,10 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
     if (remainingLineRef.current) {
       remainingLineRef.current.setMap(null)
       remainingLineRef.current = null
+    }
+    if (trafficLayerRef.current) {
+      trafficLayerRef.current.setMap(null)
+      trafficLayerRef.current = null
     }
   }, [])
 
@@ -107,6 +114,21 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
         })
       } catch (error) {
         console.error('创建终点标记失败:', error)
+      }
+    }
+
+    // 创建交通路况图层（默认不显示）
+    if (AMapInstance.TileLayer && AMapInstance.TileLayer.Traffic) {
+      try {
+        trafficLayerRef.current = new AMapInstance.TileLayer.Traffic({
+          zIndex: 10,
+          opacity: 0.7, // 透明度
+          autoRefresh: true, // 自动刷新
+          interval: 180, // 刷新间隔（秒），3分钟
+        })
+        // 默认不添加到地图，用户点击按钮后才显示
+      } catch (error) {
+        console.warn('创建交通路况图层失败:', error)
       }
     }
 
@@ -301,6 +323,21 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
     }
   }, [order.orderNo, clearAllMarkers]) // 只在订单号变化时重新初始化地图和缩放
 
+  // 切换交通路况图层显示
+  const toggleTraffic = useCallback(() => {
+    if (!trafficLayerRef.current || !map) return
+
+    if (showTraffic) {
+      // 隐藏交通图层：从地图移除
+      trafficLayerRef.current.setMap(null)
+      setShowTraffic(false)
+    } else {
+      // 显示交通图层：添加到地图
+      trafficLayerRef.current.setMap(map)
+      setShowTraffic(true)
+    }
+  }, [showTraffic, map])
+
   // WebSocket 订阅和事件监听 - 只在 map、AMap 或 orderNo 改变时重新执行
   useEffect(() => {
     if (!map || !AMap || !order.orderNo) return
@@ -323,12 +360,24 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
     // 订阅订单
     websocketService.subscribe(currentOrderNo)
     subscribedOrderNoRef.current = currentOrderNo
+    // 重置上次更新时间，避免不同订单之间的时间差影响
+    lastUpdateTimeRef.current = null
 
     // 监听位置更新
     const handleLocationUpdate = (data: LocationUpdateEvent) => {
       // 使用 ref 获取最新的 order，避免闭包问题
       const currentOrder = orderRef.current
       if (data.orderNo !== currentOrder.orderNo) return
+
+      // 计算动态动画时间：min(1000ms, 更新时间 - 上次更新时间)
+      const currentTime = Date.now()
+      let animationDuration = 2000 // 默认值
+      if (lastUpdateTimeRef.current !== null) {
+        const timeDiff = currentTime - lastUpdateTimeRef.current
+        // 确保动画时间在合理范围内：最小50ms，最大1000ms
+        animationDuration = Math.max(50, Math.min(1000, timeDiff))
+      }
+      lastUpdateTimeRef.current = currentTime
 
       // 基于路径点和 progress 计算箭头位置和角度
       if (currentOrder.route && currentOrder.route.points) {
@@ -403,12 +452,12 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
                   const currentPosArray: [number, number] = [currentLng, currentLat]
                   const newPos: [number, number] = [newLng, newLat]
 
-                  // 平滑移动车辆（包括角度更新）
+                  // 平滑移动车辆（包括角度更新），使用动态计算的动画时间
                   moveSmoothly(
                     vehicleMarkerRef.current,
                     currentPosArray,
                     newPos,
-                    2000,
+                    animationDuration,
                     angle,
                     AMap
                   )
@@ -550,12 +599,50 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
   }, [clearAllMarkers])
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <MapComponent
         id="tracking-map"
         onMapReady={handleMapReady}
         style={{ height: '100%' }}
       />
+      
+      {/* 交通路况控制按钮 */}
+      <div style={{
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        zIndex: 1000,
+        background: '#fff',
+        padding: '8px',
+        borderRadius: '4px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+      }}>
+        <button
+          onClick={toggleTraffic}
+          style={{
+            padding: '6px 12px',
+            border: '1px solid #d9d9d9',
+            borderRadius: '4px',
+            background: showTraffic ? '#1890ff' : '#fff',
+            color: showTraffic ? '#fff' : '#333',
+            cursor: 'pointer',
+            fontSize: '14px',
+            transition: 'all 0.3s',
+          }}
+          onMouseEnter={(e) => {
+            if (!showTraffic) {
+              e.currentTarget.style.background = '#f5f5f5'
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!showTraffic) {
+              e.currentTarget.style.background = '#fff'
+            }
+          }}
+        >
+          {showTraffic ? '隐藏路况' : '显示路况'}
+        </button>
+      </div>
     </div>
   )
 }

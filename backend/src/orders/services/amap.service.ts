@@ -110,7 +110,7 @@ export class AmapService {
       }
 
       // 如果点太多，进行采样（保留每 N 个点），同时同步采样时间数组
-      const sampled = this.samplePointsWithTime(points, timeArray, 50);
+      const sampled = this.samplePointsWithTime(points, timeArray, 200);
       return sampled;
     } catch (error) {
       if (error instanceof Error) {

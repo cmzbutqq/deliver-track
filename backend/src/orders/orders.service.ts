@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OrderStatus } from '@prisma/client';
 import { CreateOrderDto, UpdateOrderDto, ShipOrderDto } from './dto/order.dto';
 import { RouteQueueService } from './services/route-queue.service';
+import { MultiRoutePlannerService } from './services/multi-route-planner.service';
 import { LogisticsCompaniesService } from '../logistics-companies/logistics-companies.service';
 import { TrackingGateway } from '../tracking/tracking.gateway';
 import { SimulatorService } from '../simulator/simulator.service';
@@ -10,6 +11,7 @@ import { SimulatorService } from '../simulator/simulator.service';
 @Injectable()
 export class OrdersService {
   constructor(
+    private multiRoutePlannerService: MultiRoutePlannerService,
     private prisma: PrismaService,
     private routeQueueService: RouteQueueService,
     private logisticsCompaniesService: LogisticsCompaniesService,
@@ -440,15 +442,25 @@ export class OrdersService {
   }
 
   /**
-   * 批量发货
+   * 批量发货（多点配送路径规划）
    */
   async batchShip(merchantId: string, orderIds: string[]) {
     let shipped = 0;
     let failed = 0;
     const errors: string[] = [];
 
-    for (const orderId of orderIds) {
-      try {
+    if (orderIds.length === 0) {
+      return {
+        shipped: 0,
+        failed: 0,
+        total: 0,
+        errors: undefined,
+      };
+    }
+
+    // 获取所有待发货订单的完整信息
+    const orders = await Promise.all(
+      orderIds.map(async (orderId) => {
         const order = await this.prisma.order.findFirst({
           where: {
             id: orderId,
@@ -456,19 +468,166 @@ export class OrdersService {
             status: OrderStatus.PENDING,
           },
         });
+        return order;
+      }),
+    );
 
-        if (!order) {
-          failed++;
-          errors.push(`订单 ${orderId} 不存在或状态不允许发货`);
-          continue;
-        }
+    // 过滤出有效的订单
+    const validOrders = orders.filter((order) => order !== null);
+    const invalidOrderIds = orderIds.filter(
+      (id, index) => orders[index] === null,
+    );
 
-        await this.ship(orderId, merchantId);
-        shipped++;
-      } catch (error) {
+    // 记录无效订单的错误
+    for (const orderId of invalidOrderIds) {
+      failed++;
+      errors.push(`订单 ${orderId} 不存在或状态不允许发货`);
+    }
+
+    if (validOrders.length === 0) {
+      return {
+        shipped: 0,
+        failed,
+        total: orderIds.length,
+        errors: errors.length > 0 ? errors : undefined,
+      };
+    }
+
+    // 验证所有订单的坐标有效性
+    const ordersWithValidCoords = [];
+    for (const order of validOrders) {
+      const origin = order.origin as any;
+      const destination = order.destination as any;
+
+      if (
+        !origin ||
+        typeof origin.lng !== 'number' ||
+        typeof origin.lat !== 'number' ||
+        isNaN(origin.lng) ||
+        isNaN(origin.lat) ||
+        !isFinite(origin.lng) ||
+        !isFinite(origin.lat)
+      ) {
         failed++;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        errors.push(`订单 ${orderId} 发货失败: ${errorMessage}`);
+        errors.push(`订单 ${order.id} 起点坐标无效`);
+        continue;
+      }
+
+      if (
+        !destination ||
+        typeof destination.lng !== 'number' ||
+        typeof destination.lat !== 'number' ||
+        isNaN(destination.lng) ||
+        isNaN(destination.lat) ||
+        !isFinite(destination.lng) ||
+        !isFinite(destination.lat)
+      ) {
+        failed++;
+        errors.push(`订单 ${order.id} 终点坐标无效`);
+        continue;
+      }
+
+      ordersWithValidCoords.push(order);
+    }
+
+    if (ordersWithValidCoords.length === 0) {
+      return {
+        shipped: 0,
+        failed,
+        total: orderIds.length,
+        errors: errors.length > 0 ? errors : undefined,
+      };
+    }
+
+    // 使用多点路径规划
+    try {
+      const routeMap = await this.multiRoutePlannerService.planRoutesForOrders(
+        ordersWithValidCoords.map((order) => ({
+          id: order.id,
+          origin: order.origin,
+          destination: order.destination,
+          logistics: order.logistics,
+        })),
+        this.logisticsCompaniesService,
+      );
+
+      // 为每个订单创建路径和更新状态
+      for (const order of ordersWithValidCoords) {
+        try {
+          const routeInfo = routeMap.get(order.id);
+          if (!routeInfo) {
+            throw new Error('路径规划失败：未找到订单路径');
+          }
+
+          const origin = order.origin as any;
+          const estimatedTimeSeconds = routeInfo.estimatedTimeSeconds;
+          const estimatedTime = new Date(Date.now() + estimatedTimeSeconds * 1000);
+
+          // 更新订单状态
+          const updatedOrder = await this.prisma.order.update({
+            where: { id: order.id },
+            data: {
+              status: OrderStatus.SHIPPING,
+              currentLocation: { lng: origin.lng, lat: origin.lat },
+              estimatedTime,
+            },
+          });
+
+          // 创建路径记录
+          const route = await this.prisma.route.create({
+            data: {
+              orderId: order.id,
+              points: routeInfo.points,
+              timeArray: routeInfo.timeArray,
+              currentStep: 0,
+              totalSteps: routeInfo.points.length,
+              interval: 5000, // 保留用于向后兼容
+            },
+          });
+
+          // 添加时间线记录
+          await this.prisma.logisticsTimeline.create({
+            data: {
+              orderId: order.id,
+              status: '已揽收',
+              description: '快递已从发货地揽收',
+              location: origin.address,
+            },
+          });
+
+          // 广播状态更新
+          this.trackingGateway.broadcastStatusUpdate(updatedOrder.orderNo, {
+            orderNo: updatedOrder.orderNo,
+            status: OrderStatus.SHIPPING,
+            message: '订单已发货，正在运输中',
+          });
+
+          // 启动订单配送定时器
+          try {
+            await this.simulatorService.startOrderTimer(order.id);
+          } catch (error) {
+            console.error(`启动订单 ${updatedOrder.orderNo} 的配送定时器失败:`, error);
+          }
+
+          shipped++;
+        } catch (error) {
+          failed++;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          errors.push(`订单 ${order.id} 发货失败: ${errorMessage}`);
+        }
+      }
+    } catch (error) {
+      // 如果多点路径规划失败，回退到单订单路径规划
+      console.warn('多点路径规划失败，回退到单订单路径规划:', error);
+      for (const order of ordersWithValidCoords) {
+        try {
+          await this.ship(order.id, merchantId);
+          shipped++;
+        } catch (shipError) {
+          failed++;
+          const errorMessage = shipError instanceof Error ? shipError.message : String(shipError);
+          errors.push(`订单 ${order.id} 发货失败: ${errorMessage}`);
+        }
       }
     }
 

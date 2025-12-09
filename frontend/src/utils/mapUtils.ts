@@ -11,27 +11,27 @@ export const createStatusIcon = (status: OrderStatus, AMap: any) => {
 
   const color = colors[status] || '#d9d9d9'
 
-  // 使用 Canvas 创建圆形图标
+  // 使用 Canvas 创建圆形图标（0.5倍大小）
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  canvas.width = 32
-  canvas.height = 32
+  canvas.width = 16
+  canvas.height = 16
 
   // 绘制圆形
   ctx!.fillStyle = color
   ctx!.beginPath()
-  ctx!.arc(16, 16, 14, 0, Math.PI * 2)
+  ctx!.arc(8, 8, 7, 0, Math.PI * 2)
   ctx!.fill()
 
   // 绘制白色边框
   ctx!.strokeStyle = '#fff'
-  ctx!.lineWidth = 2
+  ctx!.lineWidth = 1
   ctx!.stroke()
 
   return new AMap.Icon({
     image: canvas.toDataURL(),
-    size: new AMap.Size(32, 32),
-    imageSize: new AMap.Size(32, 32),
+    size: new AMap.Size(16, 16),
+    imageSize: new AMap.Size(16, 16),
   })
 }
 
@@ -39,31 +39,31 @@ export const createStatusIcon = (status: OrderStatus, AMap: any) => {
 export const createOriginIcon = (AMap: any) => {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  canvas.width = 32
-  canvas.height = 32
+  canvas.width = 16
+  canvas.height = 16
 
-  // 绘制红色圆形
+  // 绘制红色圆形（0.5倍大小）
   ctx!.fillStyle = '#ff4d4f'
   ctx!.beginPath()
-  ctx!.arc(16, 16, 14, 0, Math.PI * 2)
+  ctx!.arc(8, 8, 7, 0, Math.PI * 2)
   ctx!.fill()
 
   // 绘制白色边框
   ctx!.strokeStyle = '#fff'
-  ctx!.lineWidth = 2
+  ctx!.lineWidth = 1
   ctx!.stroke()
 
   // 绘制起点标识（向上的箭头或字母 S）
   ctx!.fillStyle = '#fff'
-  ctx!.font = 'bold 16px Arial'
+  ctx!.font = 'bold 8px Arial'
   ctx!.textAlign = 'center'
   ctx!.textBaseline = 'middle'
-  ctx!.fillText('起', 16, 16)
+  ctx!.fillText('起', 8, 8)
 
   return new AMap.Icon({
     image: canvas.toDataURL(),
-    size: new AMap.Size(32, 32),
-    imageSize: new AMap.Size(32, 32),
+    size: new AMap.Size(16, 16),
+    imageSize: new AMap.Size(16, 16),
   })
 }
 
@@ -71,31 +71,31 @@ export const createOriginIcon = (AMap: any) => {
 export const createDestinationIcon = (AMap: any) => {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  canvas.width = 32
-  canvas.height = 32
+  canvas.width = 16
+  canvas.height = 16
 
-  // 绘制蓝色圆形
+  // 绘制蓝色圆形（0.5倍大小）
   ctx!.fillStyle = '#1890ff'
   ctx!.beginPath()
-  ctx!.arc(16, 16, 14, 0, Math.PI * 2)
+  ctx!.arc(8, 8, 7, 0, Math.PI * 2)
   ctx!.fill()
 
   // 绘制白色边框
   ctx!.strokeStyle = '#fff'
-  ctx!.lineWidth = 2
+  ctx!.lineWidth = 1
   ctx!.stroke()
 
   // 绘制终点标识（向下的箭头或字母 E）
   ctx!.fillStyle = '#fff'
-  ctx!.font = 'bold 16px Arial'
+  ctx!.font = 'bold 8px Arial'
   ctx!.textAlign = 'center'
   ctx!.textBaseline = 'middle'
-  ctx!.fillText('终', 16, 16)
+  ctx!.fillText('终', 8, 8)
 
   return new AMap.Icon({
     image: canvas.toDataURL(),
-    size: new AMap.Size(32, 32),
-    imageSize: new AMap.Size(32, 32),
+    size: new AMap.Size(16, 16),
+    imageSize: new AMap.Size(16, 16),
   })
 }
 
@@ -169,8 +169,8 @@ export const calculateVehicleAngle = (
 export const createVehicleIcon = (AMap: any, angle: number = 0) => {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
-  canvas.width = 40
-  canvas.height = 40
+  canvas.width = 30
+  canvas.height = 30
 
   // 将角度转换为弧度（地图角度：0度为北，顺时针；canvas角度：0度为右，逆时针）
   // 需要转换为 canvas 坐标系：0度为右，逆时针为正
@@ -180,49 +180,49 @@ export const createVehicleIcon = (AMap: any, angle: number = 0) => {
   // 保存上下文状态
   ctx!.save()
 
-  // 移动到画布中心
-  ctx!.translate(20, 20)
+  // 移动到画布中心（0.75倍大小）
+  ctx!.translate(15, 15)
   // 旋转画布
   ctx!.rotate(angleRad)
 
   // 绘制箭头主体（橙色，指向北/上）
   ctx!.fillStyle = '#ff7a00'
   ctx!.beginPath()
-  // 箭头头部（向上的三角形）
-  ctx!.moveTo(0, -12)   // 顶部尖点（相对于中心）
-  ctx!.lineTo(-8, 0)    // 左下角
-  ctx!.lineTo(-4, 0)    // 左肩
-  ctx!.lineTo(-4, 12)   // 左底部
-  ctx!.lineTo(4, 12)    // 右底部
-  ctx!.lineTo(4, 0)     // 右肩
-  ctx!.lineTo(8, 0)     // 右下角
+  // 箭头头部（向上的三角形，0.75倍缩放）
+  ctx!.moveTo(0, -9)    // 顶部尖点（相对于中心，-12 * 0.75 = -9）
+  ctx!.lineTo(-6, 0)    // 左下角（-8 * 0.75 = -6）
+  ctx!.lineTo(-3, 0)    // 左肩（-4 * 0.75 = -3）
+  ctx!.lineTo(-3, 9)    // 左底部（12 * 0.75 = 9）
+  ctx!.lineTo(3, 9)     // 右底部（4 * 0.75 = 3）
+  ctx!.lineTo(3, 0)     // 右肩（4 * 0.75 = 3）
+  ctx!.lineTo(6, 0)     // 右下角（8 * 0.75 = 6）
   ctx!.closePath()
   ctx!.fill()
 
   // 绘制箭头边框（白色，增加对比度）
   ctx!.strokeStyle = '#fff'
-  ctx!.lineWidth = 2
+  ctx!.lineWidth = 1.5  // 2 * 0.75 = 1.5
   ctx!.beginPath()
-  ctx!.moveTo(0, -12)
-  ctx!.lineTo(-8, 0)
-  ctx!.lineTo(-4, 0)
-  ctx!.lineTo(-4, 12)
-  ctx!.lineTo(4, 12)
-  ctx!.lineTo(4, 0)
-  ctx!.lineTo(8, 0)
+  ctx!.moveTo(0, -9)
+  ctx!.lineTo(-6, 0)
+  ctx!.lineTo(-3, 0)
+  ctx!.lineTo(-3, 9)
+  ctx!.lineTo(3, 9)
+  ctx!.lineTo(3, 0)
+  ctx!.lineTo(6, 0)
   ctx!.closePath()
   ctx!.stroke()
 
   // 绘制箭头内部高光（浅橙色，增加立体感）
   ctx!.fillStyle = '#ffa64d'
   ctx!.beginPath()
-  ctx!.moveTo(0, -10)
-  ctx!.lineTo(-6, 0)
-  ctx!.lineTo(-2, 0)
-  ctx!.lineTo(-2, 10)
-  ctx!.lineTo(2, 10)
-  ctx!.lineTo(2, 0)
-  ctx!.lineTo(6, 0)
+  ctx!.moveTo(0, -7.5)   // -10 * 0.75 = -7.5
+  ctx!.lineTo(-4.5, 0)  // -6 * 0.75 = -4.5
+  ctx!.lineTo(-1.5, 0)  // -2 * 0.75 = -1.5
+  ctx!.lineTo(-1.5, 7.5) // 10 * 0.75 = 7.5
+  ctx!.lineTo(1.5, 7.5)  // 2 * 0.75 = 1.5
+  ctx!.lineTo(1.5, 0)    // 2 * 0.75 = 1.5
+  ctx!.lineTo(4.5, 0)   // 6 * 0.75 = 4.5
   ctx!.closePath()
   ctx!.fill()
 
@@ -231,8 +231,8 @@ export const createVehicleIcon = (AMap: any, angle: number = 0) => {
 
   return new AMap.Icon({
     image: canvas.toDataURL(),
-    size: new AMap.Size(40, 40),
-    imageSize: new AMap.Size(40, 40),
+    size: new AMap.Size(30, 30),
+    imageSize: new AMap.Size(30, 30),
   })
 }
 
