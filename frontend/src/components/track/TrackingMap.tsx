@@ -264,61 +264,9 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
           mapInstance.setFitView(overlays, false, [20, 20, 20, 20])
         }
       } catch (error) {
-        // 如果 setFitView 失败，使用备用方案：手动计算中心点和缩放级别
-        // 验证 origin 和 destination 的有效性
-        if (isValidCoordinate(origin.lng, origin.lat) && isValidCoordinate(destination.lng, destination.lat)) {
-          const lngDiff = Math.abs(destination.lng - origin.lng)
-          const latDiff = Math.abs(destination.lat - origin.lat)
-          const maxDiff = Math.max(lngDiff, latDiff)
-          
-          const centerLng = (origin.lng + destination.lng) / 2
-          const centerLat = (origin.lat + destination.lat) / 2
-          
-          if (isValidCoordinate(centerLng, centerLat)) {
-            mapInstance.setCenter([centerLng, centerLat])
-          } else {
-            console.warn('计算的中心点无效，使用默认中心点')
-            mapInstance.setCenter([116.397428, 39.90923]) // 北京天安门
-          }
-          
-          // 根据范围设置合适的缩放级别
-          let zoom: number
-          if (maxDiff < 0.01) { // < 1公里
-            zoom = 14
-          } else if (maxDiff < 0.05) { // < 5公里
-            zoom = 13
-          } else if (maxDiff < 0.1) { // < 10公里
-            zoom = 12
-          } else if (maxDiff < 0.5) { // < 50公里
-            zoom = 11
-          } else if (maxDiff < 1) { // < 100公里
-            zoom = 10
-          } else if (maxDiff < 2) { // < 200公里
-            zoom = 9
-          } else if (maxDiff < 5) { // < 500公里
-            zoom = 8
-          } else if (maxDiff < 10) { // < 1000公里
-            zoom = 7
-          } else if (maxDiff < 20) { // < 2000公里
-            zoom = 6
-          } else if (maxDiff < 50) { // < 5000公里
-            zoom = 5
-          } else if (maxDiff < 100) { // < 10000公里
-            zoom = 4
-          } else if (maxDiff < 200) { // < 20000公里
-            zoom = 3
-          } else if (maxDiff < 500) { // < 50000公里
-            zoom = 2
-          } else { // >= 50000公里
-            zoom = 1
-          }
-          zoom = Math.max(1, Math.min(18, zoom))
-          
-          mapInstance.setZoom(zoom)
-        } else {
-          console.warn('起点或终点坐标无效，使用默认中心点')
-          mapInstance.setCenter([116.397428, 39.90923]) // 北京天安门
-        }
+        // setFitView 不可用时直接抛出错误
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        throw new Error(`订单追踪地图视野调整失败: ${errorMessage}`)
       }
     }
   }, [order.orderNo, clearAllMarkers]) // 只在订单号变化时重新初始化地图和缩放

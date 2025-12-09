@@ -112,61 +112,9 @@ const ZoneEditor = ({ zone, onSave, onCancel }: ZoneEditorProps) => {
       // 使用 setFitView 自动调整视野
       mapRef.current.setFitView([polygon], false, [50, 50, 50, 50])
     } catch (error) {
-      // 如果 setFitView 失败，使用备用方案：计算边界
-      if (points.length === 1) {
-        // 只有一个点，设置合适的缩放级别
-        mapRef.current.setCenter(points[0])
-        mapRef.current.setZoom(14)
-      } else {
-        const lngs = points.map(p => p[0])
-        const lats = points.map(p => p[1])
-        const minLng = Math.min(...lngs)
-        const maxLng = Math.max(...lngs)
-        const minLat = Math.min(...lats)
-        const maxLat = Math.max(...lats)
-
-        const centerLng = (minLng + maxLng) / 2
-        const centerLat = (minLat + maxLat) / 2
-        const lngDiff = maxLng - minLng
-        const latDiff = maxLat - minLat
-        const maxDiff = Math.max(lngDiff, latDiff)
-
-        mapRef.current.setCenter([centerLng, centerLat])
-        
-        // 根据范围设置合适的缩放级别
-        let zoom: number
-        if (maxDiff < 0.01) { // < 1公里
-          zoom = 14
-        } else if (maxDiff < 0.05) { // < 5公里
-          zoom = 13
-        } else if (maxDiff < 0.1) { // < 10公里
-          zoom = 12
-        } else if (maxDiff < 0.5) { // < 50公里
-          zoom = 11
-        } else if (maxDiff < 1) { // < 100公里
-          zoom = 10
-        } else if (maxDiff < 2) { // < 200公里
-          zoom = 9
-        } else if (maxDiff < 5) { // < 500公里
-          zoom = 8
-        } else if (maxDiff < 10) { // < 1000公里
-          zoom = 7
-        } else if (maxDiff < 20) { // < 2000公里
-          zoom = 6
-        } else if (maxDiff < 50) { // < 5000公里
-          zoom = 5
-        } else if (maxDiff < 100) { // < 10000公里
-          zoom = 4
-        } else if (maxDiff < 200) { // < 20000公里
-          zoom = 3
-        } else if (maxDiff < 500) { // < 50000公里
-          zoom = 2
-        } else { // >= 50000公里
-          zoom = 1
-        }
-        zoom = Math.max(1, Math.min(18, zoom))
-        mapRef.current.setZoom(zoom)
-      }
+      // setFitView 不可用时直接抛出错误
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`配送区域地图视野调整失败: ${errorMessage}`)
     }
   }
 

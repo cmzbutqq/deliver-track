@@ -72,81 +72,73 @@ const HeatmapChart = ({ orders }: HeatmapChartProps) => {
       return
     }
 
+    // 计算统计数据，用于调整 max 值
+    const counts = heatmapData.map((d) => d.count)
+    const maxCount = Math.max(...counts)
+    const avgCount = counts.reduce((sum, count) => sum + count, 0) / counts.length
+    
+    // 调整 max 值：使用最大值和平均值的组合，让单个订单不会直接变红
+    // 如果最大值很大，使用最大值；如果最大值较小，使用更大的倍数
+    const adjustedMax = maxCount > 3 
+      ? maxCount * 2
+      : maxCount * 3
+
     // 创建热力图实例（注意：2.0 API 使用 AMap.HeatMap，不是 AMap.Heatmap）
     heatmapRef.current = new AMap.HeatMap(map, {
-      radius: 25, // 热力图的半径（像素）
+      radius: 60, // 增大半径，让热力图更平滑、更美观
       opacity: [0, 0.8], // 热力图的透明度范围
       gradient: {
-        // 热力图的颜色渐变
-        0.2: 'rgba(0, 0, 255, 0)',
-        0.5: 'rgba(0, 255, 0, 1)',
-        0.8: 'rgba(255, 255, 0, 1)',
-        1.0: 'rgba(255, 0, 0, 1)',
+        // 热力图的颜色渐变，调整阈值让红色更难达到
+        0.0: 'rgba(0, 0, 255, 0)',      // 蓝色，完全透明
+        0.3: 'rgba(0, 255, 0, 0.4)',    // 绿色，低密度
+        0.6: 'rgba(255, 255, 0, 0.7)',  // 黄色，中等密度
+        0.85: 'rgba(255, 165, 0, 0.85)', // 橙色，较高密度
+        1.0: 'rgba(255, 0, 0, 1)',      // 红色，最高密度
       },
     })
 
     // 设置热力图数据集
     heatmapRef.current.setDataSet({
       data: heatmapData,
-      max: Math.max(...heatmapData.map((d) => d.count)),
+      max: adjustedMax,
     })
 
     // 调整地图视野以包含所有数据点
     if (heatmapData.length > 0) {
-      const lngs = heatmapData.map((d) => d.lng)
-      const lats = heatmapData.map((d) => d.lat)
-      const minLng = Math.min(...lngs)
-      const maxLng = Math.max(...lngs)
-      const minLat = Math.min(...lats)
-      const maxLat = Math.max(...lats)
+      try {
+        // 为热力图数据点创建边界多边形，用于 setFitView
+        const lngs = heatmapData.map((d) => d.lng)
+        const lats = heatmapData.map((d) => d.lat)
+        const minLng = Math.min(...lngs)
+        const maxLng = Math.max(...lngs)
+        const minLat = Math.min(...lats)
+        const maxLat = Math.max(...lats)
 
-      const centerLng = (minLng + maxLng) / 2
-      const centerLat = (minLat + maxLat) / 2
-      const lngDiff = maxLng - minLng
-      const latDiff = maxLat - minLat
-      const maxDiff = Math.max(lngDiff, latDiff)
+        // 创建边界矩形多边形作为覆盖物
+        const boundsPolygon = new AMap.Polygon({
+          path: [
+            [minLng, minLat],
+            [maxLng, minLat],
+            [maxLng, maxLat],
+            [minLng, maxLat],
+          ],
+          strokeColor: 'transparent',
+          fillColor: 'transparent',
+          fillOpacity: 0,
+          strokeOpacity: 0,
+          map: null, // 不显示在地图上，仅用于 setFitView
+        })
 
-      // 设置地图中心点
-      map.setCenter([centerLng, centerLat])
-      
-      // 改进的缩放级别计算：确保不会放得太大，能显示整张图
-      // 添加边距系数，确保数据点不会贴边显示
-      const paddingFactor = 1.2 // 20% 的边距
-      const adjustedMaxDiff = maxDiff * paddingFactor
-      
-      let zoom: number
-      if (adjustedMaxDiff < 0.001) {
-        // 范围极小（< 100米），使用适中的缩放级别，不要放太大
-        zoom = 12
-      } else if (adjustedMaxDiff < 0.01) {
-        // 范围很小（< 1公里），使用适中的缩放级别
-        zoom = 11
-      } else if (adjustedMaxDiff < 0.05) {
-        zoom = 10
-      } else if (adjustedMaxDiff < 0.1) {
-        zoom = 9
-      } else if (adjustedMaxDiff < 0.5) {
-        zoom = 8
-      } else if (adjustedMaxDiff < 1) {
-        zoom = 7
-      } else if (adjustedMaxDiff < 2) {
-        zoom = 6
-      } else if (adjustedMaxDiff < 5) {
-        zoom = 5
-      } else if (adjustedMaxDiff < 10) {
-        zoom = 4
-      } else if (adjustedMaxDiff < 20) {
-        zoom = 3
-      } else if (adjustedMaxDiff < 50) {
-        zoom = 2
-      } else {
-        // 范围极大（跨洲或全球），使用最小缩放级别
-        zoom = 1
+        // 使用 setFitView 自动调整视野
+        map.setFitView([boundsPolygon], false, [50, 50, 50, 50])
+        
+        // 清理临时多边形
+        boundsPolygon.setMap(null)
+      } catch (error) {
+        // setFitView 不可用时直接抛出错误
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        throw new Error(`热力图视野调整失败: ${errorMessage}`)
       }
-      
-      // 确保缩放级别在合理范围内（1-12），支持更大范围的显示
-      zoom = Math.max(1, Math.min(12, zoom))
-      map.setZoom(zoom)
     }
   }
 

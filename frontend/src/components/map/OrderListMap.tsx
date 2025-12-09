@@ -177,91 +177,20 @@ const OrderListMap = ({ selectedOrders }: OrderListMapProps) => {
 
     // 只在订单列表变化时调整视野，状态刷新时不重新缩放
     if (orderListChanged && positions.length > 0) {
-      if (positions.length === 1) {
-        // 只有一个点，设置合适的缩放级别（12 级，显示街道级别）
-        mapRef.current.setCenter(positions[0])
-        mapRef.current.setZoom(12)
-      } else {
-        // 多个点，使用备用方案：计算中心点和范围（更可靠，避免 setFitView 的问题）
-        // 去重，避免重复点导致问题
-        const seen = new Set<string>()
-        const uniquePositions = positions.filter(pos => {
-          const key = `${pos[0]},${pos[1]}`
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        
-        // 如果去重后只有一个点，使用单个点的逻辑
-        if (uniquePositions.length === 1) {
-          mapRef.current.setCenter(uniquePositions[0])
+      try {
+        // 使用 setFitView 自动调整视野
+        const overlays = [...markersRef.current, ...polylinesRef.current].filter(Boolean)
+        if (overlays.length > 0) {
+          mapRef.current.setFitView(overlays, false, [50, 50, 50, 50])
+        } else {
+          // 如果没有覆盖物，使用第一个点作为中心并设置默认缩放级别
+          mapRef.current.setCenter(positions[0])
           mapRef.current.setZoom(12)
-          return
         }
-        
-        // 计算所有点的最小/最大经纬度
-        const minLng = Math.min(...uniquePositions.map(pos => pos[0]))
-        const maxLng = Math.max(...uniquePositions.map(pos => pos[0]))
-        const minLat = Math.min(...uniquePositions.map(pos => pos[1]))
-        const maxLat = Math.max(...uniquePositions.map(pos => pos[1]))
-        
-        // 计算中心点
-        const centerLng = (minLng + maxLng) / 2
-        const centerLat = (minLat + maxLat) / 2
-        const lngDiff = maxLng - minLng
-        const latDiff = maxLat - minLat
-        const maxDiff = Math.max(lngDiff, latDiff)
-        
-        // 验证计算结果
-        if (isNaN(centerLng) || isNaN(centerLat) || !isFinite(centerLng) || !isFinite(centerLat)) {
-          console.error(`中心点计算失败: center=[${centerLng}, ${centerLat}]. 原始位置: ${JSON.stringify(uniquePositions)}`)
-          // 使用第一个有效点作为中心
-          mapRef.current.setCenter(uniquePositions[0])
-          mapRef.current.setZoom(12)
-          return
-        }
-        
-        mapRef.current.setCenter([centerLng, centerLat])
-        
-        // 根据范围大小设置合适的缩放级别
-        // 添加边距系数，确保所有标记都能完整显示，不会贴边
-        const paddingFactor = 1.3 // 30% 的边距
-        const adjustedMaxDiff = maxDiff * paddingFactor
-        
-        let zoom: number
-        if (adjustedMaxDiff < 0.001) { // < 100米
-          zoom = 14
-        } else if (adjustedMaxDiff < 0.01) { // < 1公里
-          zoom = 13
-        } else if (adjustedMaxDiff < 0.05) { // < 5公里
-          zoom = 12
-        } else if (adjustedMaxDiff < 0.1) { // < 10公里
-          zoom = 11
-        } else if (adjustedMaxDiff < 0.5) { // < 50公里
-          zoom = 10
-        } else if (adjustedMaxDiff < 1) { // < 100公里
-          zoom = 9
-        } else if (adjustedMaxDiff < 2) { // < 200公里
-          zoom = 8
-        } else if (adjustedMaxDiff < 5) { // < 500公里
-          zoom = 7
-        } else if (adjustedMaxDiff < 10) { // < 1000公里
-          zoom = 6
-        } else if (adjustedMaxDiff < 20) { // < 2000公里
-          zoom = 5
-        } else if (adjustedMaxDiff < 50) { // < 5000公里
-          zoom = 4
-        } else if (adjustedMaxDiff < 100) { // < 10000公里
-          zoom = 3
-        } else if (adjustedMaxDiff < 200) { // < 20000公里
-          zoom = 2
-        } else { // >= 20000公里
-          zoom = 1
-        }
-        
-        // 确保缩放级别在合理范围内（1-14）
-        zoom = Math.max(1, Math.min(14, zoom))
-        mapRef.current.setZoom(zoom)
+      } catch (error) {
+        // setFitView 不可用时直接抛出错误
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        throw new Error(`订单地图视野调整失败: ${errorMessage}`)
       }
     }
   }, [selectedOrders])
