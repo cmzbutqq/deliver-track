@@ -195,6 +195,7 @@ export class SimulatorService implements OnModuleInit {
       orderNo,
       location: currentLocation,
       progress,
+      currentStep: targetStep,
     });
 
     // 在关键节点更新时间线（基于时间进度，而非步骤数）

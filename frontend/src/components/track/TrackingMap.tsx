@@ -346,10 +346,12 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
                    isFinite(lng) && isFinite(lat)
           }
           
-          // 根据 progress 计算当前步骤索引（基于 currentStep，不提前）
-          const progress = data.progress || 0
-          const currentIndex = Math.floor((progress / 100) * validRoutePoints.length)
-          const validIndex = Math.min(Math.max(0, currentIndex), validRoutePoints.length - 1)
+          // 直接使用 currentStep，如果 WebSocket 消息中有则使用，否则使用订单中的 currentStep
+          // 对于多点配送组，progress 是基于时间计算的，不能用来反推 currentStep
+          const currentStep = data.currentStep !== undefined 
+            ? data.currentStep 
+            : (currentOrder.route?.currentStep ?? 0)
+          const validIndex = Math.min(Math.max(0, currentStep), validRoutePoints.length - 1)
           const currentPoint = validRoutePoints[validIndex]
           
           if (currentPoint && Array.isArray(currentPoint) && currentPoint.length >= 2) {
@@ -363,6 +365,9 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
             
             // 计算箭头角度（基于 currentStep）
             let angle = 0
+            const progress = validIndex >= validRoutePoints.length - 1
+              ? 100
+              : (validIndex / (validRoutePoints.length - 1)) * 100
             const calculatedAngle = calculateVehicleAngle(
               validRoutePoints,
               progress
@@ -445,12 +450,13 @@ const TrackingMap = ({ order, onLocationUpdate, onStatusUpdate }: TrackingMapPro
           return
         }
         
-        // 使用 progress 计算当前索引（基于 currentStep，不提前）
-        // progress 是基于 (currentStep + 1) / totalSteps，所以需要减1来得到 currentStep
-        const progress = data.progress || 0
-        const currentIndex = Math.floor((progress / 100) * validRoutePoints.length)
+        // 直接使用 currentStep，如果 WebSocket 消息中有则使用，否则使用订单中的 currentStep
+        // 对于多点配送组，progress 是基于时间计算的，不能用来反推 currentStep
+        const currentStep = data.currentStep !== undefined 
+          ? data.currentStep 
+          : (currentOrder.route?.currentStep ?? 0)
         // 确保索引在有效范围内
-        const validIndex = Math.min(Math.max(0, currentIndex), validRoutePoints.length - 1)
+        const validIndex = Math.min(Math.max(0, currentStep), validRoutePoints.length - 1)
         
         const passedPoints = validRoutePoints.slice(0, validIndex + 1)
         const remainingPoints = validRoutePoints.slice(validIndex)

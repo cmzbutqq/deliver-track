@@ -54,13 +54,10 @@ const TrackingPage = () => {
       }
       
       // 如果有 route，更新 currentStep
-      // 后端发送的 progress = (currentStep + 1) / points.length * 100
-      // 所以 currentStep = Math.floor((progress / 100) * routePoints.length) - 1
-      if (updatedOrder.route && updatedOrder.route.points) {
+      // 直接使用 WebSocket 消息中的 currentStep，对于多点配送组，progress 是基于时间计算的，不能用来反推
+      if (updatedOrder.route && data.currentStep !== undefined) {
         const routePoints = updatedOrder.route.points as number[][]
-        // 根据 progress 计算 currentStep（不提前）
-        const calculatedStep = Math.floor((data.progress / 100) * routePoints.length) - 1
-        const currentStep = Math.max(0, Math.min(calculatedStep, routePoints.length - 1))
+        const currentStep = Math.max(0, Math.min(data.currentStep, routePoints.length - 1))
         updatedOrder.route = {
           ...updatedOrder.route,
           currentStep,

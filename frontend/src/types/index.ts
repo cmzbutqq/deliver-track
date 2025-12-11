@@ -141,6 +141,7 @@ export interface LocationUpdateEvent {
     lat: number
   }
   progress: number
+  currentStep?: number // 当前步骤索引，用于准确显示已完成路径
   status?: OrderStatus
   estimatedTime?: string
 }
