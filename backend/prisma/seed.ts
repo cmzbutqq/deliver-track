@@ -1,4 +1,4 @@
-import { PrismaClient, OrderStatus } from '@prisma/client';
+import { PrismaClient, OrderStatus, VehicleType, VehicleStatus, DriverStatus, WarehouseStatus, ExceptionType, ExceptionHandleStatus, ProductStatus, SupplierCreditLevel, SupplierStatus, DeliveryRouteStatus, ShiftType, ScheduleStatus, MaintenanceType, TransactionType, FeeType, SettlementStatus, TaskType, TaskStatus, PaymentMethod, PaymentStatus, RefundStatus, ComplaintType, ComplaintStatus, CouponType, CouponStatus, AlertLevel, RecipientType, NotificationType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import axios from 'axios';
 
@@ -485,6 +485,203 @@ async function main() {
 
   console.log('✅ 创建商家账号:', merchant.username);
 
+  // 更新商家扩展字段
+  await prisma.merchant.update({
+    where: { id: merchant.id },
+    data: {
+      businessLicense: `BL${Math.floor(Math.random() * 1000000000)}`,
+      creditLevel: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
+      accountBalance: Math.random() * 100000,
+    },
+  });
+
+  // 创建客户数据
+  console.log('👥 创建客户数据...');
+  const customers = [];
+  for (let i = 0; i < 50; i++) {
+    const customer = await prisma.customer.create({
+      data: {
+        name: randomName(),
+        phone: randomPhone(),
+        email: `customer${i}@example.com`,
+        idCard: `11010119900101${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`,
+        defaultAddress: {
+          lng: 116.3 + Math.random() * 0.3,
+          lat: 39.8 + Math.random() * 0.3,
+          address: `北京市${['东城区', '西城区', '朝阳区', '海淀区'][Math.floor(Math.random() * 4)]}${randomName()}路${Math.floor(Math.random() * 100)}号`,
+        },
+      },
+    });
+    customers.push(customer);
+
+    // 为每个客户创建1-3个地址
+    const addressCount = Math.floor(Math.random() * 3) + 1;
+    for (let j = 0; j < addressCount; j++) {
+      await prisma.customerAddress.create({
+        data: {
+          customerId: customer.id,
+          receiverName: randomName(),
+          receiverPhone: randomPhone(),
+          address: {
+            lng: 116.3 + Math.random() * 0.3,
+            lat: 39.8 + Math.random() * 0.3,
+            address: `北京市${['东城区', '西城区', '朝阳区', '海淀区'][Math.floor(Math.random() * 4)]}${randomName()}路${Math.floor(Math.random() * 100)}号`,
+          },
+          isDefault: j === 0, // 第一个地址设为默认
+        },
+      });
+    }
+  }
+  console.log(`✅ 已创建 ${customers.length} 个客户及其地址`);
+
+  // 创建商品数据
+  console.log('📦 创建商品数据...');
+  const products = [];
+  const categories = ['电子产品', '服装', '食品', '家居', '图书', '运动', '美妆', '汽车用品'];
+  for (let i = 0; i < 30; i++) {
+    const product = await prisma.product.create({
+      data: {
+        merchantId: merchant.id,
+        name: productNames[i % productNames.length],
+        sku: `SKU${String(i + 1).padStart(6, '0')}`,
+        category: categories[Math.floor(Math.random() * categories.length)],
+        weight: Math.random() * 10 + 0.1, // 0.1-10.1 kg
+        volume: Math.random() * 0.1 + 0.01, // 0.01-0.11 m³
+        price: Math.random() * 5000 + 100, // 100-5100 元
+        description: `${productNames[i % productNames.length]}的详细描述`,
+        status: Math.random() > 0.2 ? ProductStatus.ON_SHELF : ProductStatus.OFF_SHELF,
+      },
+    });
+    products.push(product);
+  }
+  console.log(`✅ 已创建 ${products.length} 个商品`);
+
+  // 创建供应商数据
+  console.log('🏭 创建供应商数据...');
+  const suppliers = [];
+  const supplierNames = ['北京供应商A', '上海供应商B', '广州供应商C', '深圳供应商D', '杭州供应商E'];
+  for (let i = 0; i < 5; i++) {
+    const supplier = await prisma.supplier.create({
+      data: {
+        name: supplierNames[i],
+        contactName: randomName(),
+        contactPhone: randomPhone(),
+        address: {
+          lng: 116.3 + Math.random() * 0.3,
+          lat: 39.8 + Math.random() * 0.3,
+          address: `北京市${['东城区', '西城区', '朝阳区', '海淀区'][Math.floor(Math.random() * 4)]}${randomName()}路${Math.floor(Math.random() * 100)}号`,
+        },
+        creditLevel: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)] as SupplierCreditLevel,
+        status: Math.random() > 0.1 ? SupplierStatus.NORMAL : (Math.random() > 0.5 ? SupplierStatus.SUSPENDED : SupplierStatus.BLACKLIST),
+      },
+    });
+    suppliers.push(supplier);
+  }
+  console.log(`✅ 已创建 ${suppliers.length} 个供应商`);
+
+  // 创建车辆数据
+  console.log('🚗 创建车辆数据...');
+  const vehicles = [];
+  const vehicleTypes = [VehicleType.SMALL_TRUCK, VehicleType.LARGE_TRUCK, VehicleType.ELECTRIC];
+  const vehicleStatuses = [VehicleStatus.AVAILABLE, VehicleStatus.AVAILABLE, VehicleStatus.AVAILABLE, VehicleStatus.MAINTENANCE];
+  
+  for (let i = 0; i < 8; i++) {
+    const vehicle = await prisma.vehicle.create({
+      data: {
+        plateNumber: `京${['A', 'B', 'C', 'D', 'E'][Math.floor(Math.random() * 5)]}${Math.floor(Math.random() * 10000).toString().padStart(5, '0')}`,
+        vehicleType: vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)],
+        loadCapacity: vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)] === VehicleType.LARGE_TRUCK ? 
+          Math.random() * 5 + 5 : Math.random() * 3 + 1, // 大货车5-10吨，其他1-4吨
+        status: vehicleStatuses[Math.floor(Math.random() * vehicleStatuses.length)],
+        purchaseDate: new Date(Date.now() - Math.random() * 5 * 365 * 24 * 60 * 60 * 1000), // 0-5年前购买
+        lastMaintenanceDate: new Date(Date.now() - Math.random() * 90 * 24 * 60 * 60 * 1000), // 0-90天前维修
+      },
+    });
+    vehicles.push(vehicle);
+  }
+  console.log(`✅ 已创建 ${vehicles.length} 辆车`);
+
+  // 创建仓库数据
+  console.log('🏭 创建仓库数据...');
+  const warehouses = [];
+  const warehouseLocations = [
+    { name: '北京分拨中心', lng: 116.407396, lat: 39.904211, address: '北京市朝阳区' },
+    { name: '上海分拨中心', lng: 121.473701, lat: 31.230416, address: '上海市浦东新区' },
+    { name: '广州分拨中心', lng: 113.264385, lat: 23.129112, address: '广州市天河区' },
+    { name: '成都分拨中心', lng: 104.066541, lat: 30.572269, address: '成都市锦江区' },
+  ];
+
+  for (const loc of warehouseLocations) {
+    const warehouse = await prisma.warehouse.create({
+      data: {
+        name: loc.name,
+        address: {
+          lng: loc.lng,
+          lat: loc.lat,
+          address: loc.address,
+        },
+        managerName: randomName(),
+        managerPhone: randomPhone(),
+        capacity: Math.floor(Math.random() * 50000) + 10000, // 10000-60000
+        currentStock: Math.floor(Math.random() * 30000) + 5000, // 5000-35000
+        status: Math.random() > 0.9 ? WarehouseStatus.MAINTENANCE : WarehouseStatus.NORMAL,
+      },
+    });
+    warehouses.push(warehouse);
+  }
+  console.log(`✅ 已创建 ${warehouses.length} 个仓库`);
+
+  // 创建配送路线数据
+  console.log('🛣️  创建配送路线数据...');
+  const deliveryRoutes = [];
+  const regions = ['华北', '华东', '华南', '西南', '西北', '东北'];
+  for (const warehouse of warehouses) {
+    for (let i = 0; i < 2; i++) {
+      const route = await prisma.deliveryRoute.create({
+        data: {
+          name: `${warehouse.name}-${regions[Math.floor(Math.random() * regions.length)]}路线`,
+          warehouseId: warehouse.id,
+          destinationRegion: regions[Math.floor(Math.random() * regions.length)],
+          distance: Math.random() * 500 + 100, // 100-600 km
+          estimatedTime: Math.floor(Math.random() * 12) + 4, // 4-16 小时
+          status: Math.random() > 0.1 ? DeliveryRouteStatus.ACTIVE : DeliveryRouteStatus.INACTIVE,
+        },
+      });
+      deliveryRoutes.push(route);
+    }
+  }
+  console.log(`✅ 已创建 ${deliveryRoutes.length} 条配送路线`);
+
+  // 创建配送员数据
+  console.log('👤 创建配送员数据...');
+  const drivers = [];
+  const driverStatuses = [DriverStatus.IDLE, DriverStatus.IDLE, DriverStatus.DELIVERING, DriverStatus.RESTING];
+  
+  for (let i = 0; i < 12; i++) {
+    const vehicle = vehicles[Math.floor(Math.random() * vehicles.length)];
+    const driver = await prisma.deliveryDriver.create({
+      data: {
+        name: randomName(),
+        phone: randomPhone(),
+        licenseNumber: `D${Math.floor(Math.random() * 1000000000).toString().padStart(10, '0')}`,
+        vehicleId: vehicle.id,
+        status: driverStatuses[Math.floor(Math.random() * driverStatuses.length)],
+        currentLocation: {
+          lng: 116.407396 + (Math.random() - 0.5) * 0.1,
+          lat: 39.904211 + (Math.random() - 0.5) * 0.1,
+        },
+        totalOrders: Math.floor(Math.random() * 200),
+        avgRating: Math.random() * 2 + 3, // 3-5分
+        onTimeRate: Math.random() * 0.3 + 0.7, // 70%-100%
+      },
+    });
+    drivers.push(driver);
+  }
+  console.log(`✅ 已创建 ${drivers.length} 个配送员`);
+
+  // 创建配送区域-配送员关联数据（在创建配送区域之后）
+  // 注意：这里先创建配送区域，然后再关联
+
   // 先删除该商家的所有现有数据，避免重复
   console.log('🗑️  清理旧数据...');
   const deletedOrders = await prisma.order.deleteMany({
@@ -586,6 +783,29 @@ async function main() {
     });
   }
   console.log(`✅ 已创建 ${deliveryZones.length} 个配送区域`);
+
+  // 创建配送区域-配送员关联数据
+  console.log('🔗 创建配送区域-配送员关联数据...');
+  const allZones = await prisma.deliveryZone.findMany({
+    where: { merchantId: merchant.id },
+  });
+  let zoneDriverCount = 0;
+  for (const zone of allZones) {
+    // 每个配送区域关联2-4个配送员
+    const driverCount = Math.floor(Math.random() * 3) + 2;
+    const selectedDrivers = drivers.sort(() => Math.random() - 0.5).slice(0, driverCount);
+    for (const driver of selectedDrivers) {
+      await prisma.deliveryZoneDriver.create({
+        data: {
+          zoneId: zone.id,
+          driverId: driver.id,
+          priority: Math.floor(Math.random() * 10), // 0-9优先级
+        },
+      });
+      zoneDriverCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${zoneDriverCount} 条配送区域-配送员关联`);
 
   // 商家发货地址
   const origin = {
@@ -757,20 +977,56 @@ async function main() {
       // 生成订单号（需要在 createdAt 之后）
       const orderNo = `ORD${createdAt.getTime()}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
 
+      // 随机分配配送员和仓库（仅对已发货和已送达的订单）
+      const deliveryDriver = (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED) 
+        ? drivers[Math.floor(Math.random() * drivers.length)] 
+        : null;
+      const warehouse = (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED)
+        ? warehouses[Math.floor(Math.random() * warehouses.length)]
+        : null;
+
+      // 随机选择客户和客户地址
+      const customer = customers[Math.floor(Math.random() * customers.length)];
+      const customerAddresses = await prisma.customerAddress.findMany({
+        where: { customerId: customer.id },
+      });
+      const customerAddress = customerAddresses.length > 0 
+        ? customerAddresses[Math.floor(Math.random() * customerAddresses.length)]
+        : null;
+
+      // 随机选择商品
+      const product = products[Math.floor(Math.random() * products.length)];
+
+      // 计算重量和距离
+      const weight = Math.random() * 20 + 0.5; // 0.5-20.5 kg
+      const distance = Math.sqrt(
+        Math.pow((destLng - origin.lng) * 111, 2) + 
+        Math.pow((destLat - origin.lat) * 111, 2)
+      ); // 粗略计算距离（km）
+
+      // 计算费用
+      const baseFee = 10 + distance * 2; // 基础运费
+      const urgentFee = Math.random() > 0.7 ? Math.random() * 20 + 10 : 0; // 30%概率有加急费
+      const insuranceAmount = Math.random() > 0.8 ? randomAmount() * 0.1 : 0; // 20%概率有保价
+      const insuranceFee = insuranceAmount > 0 ? insuranceAmount * 0.01 : 0; // 保价费 = 保价金额 * 1%
+      const distanceFee = distance * 1.5;
+      const weightFee = weight * 2;
+      const totalFee = baseFee + urgentFee + insuranceFee + distanceFee + weightFee;
+
       // 创建订单
       const order = await prisma.order.create({
         data: {
           orderNo,
           merchantId: merchant.id,
           status: orderStatus,
-          receiverName: randomName(),
-          receiverPhone: randomPhone(),
-          receiverAddress: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
-          productName: productNames[Math.floor(Math.random() * productNames.length)],
+          receiverName: customerAddress?.receiverName || randomName(),
+          receiverPhone: customerAddress?.receiverPhone || randomPhone(),
+          receiverAddress: customerAddress ? (customerAddress.address as any).address : `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+          productName: product.name,
           productQuantity: Math.floor(Math.random() * 3) + 1,
           amount: randomAmount(),
           origin,
-          destination: {
+          destination: customerAddress ? customerAddress.address : {
             lng: destLng,
             lat: destLat,
             address: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
@@ -779,10 +1035,35 @@ async function main() {
           logistics: logistics.name,
           estimatedTime,
           actualTime,
+          deliveryDriverId: deliveryDriver?.id,
+          warehouseId: warehouse?.id,
+          customerId: customer.id,
+          customerAddressId: customerAddress?.id,
+          productId: product.id,
+          insuranceAmount: insuranceAmount > 0 ? insuranceAmount : null,
+          urgentFee,
+          totalFee,
+          weight,
+          distance,
           createdAt,
           updatedAt: orderStatus === OrderStatus.DELIVERED && actualTime ? actualTime : createdAt,
         },
       });
+
+      // 创建配送费用明细
+      if (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED) {
+        await prisma.deliveryFee.create({
+          data: {
+            orderId: order.id,
+            baseFee,
+            urgentFee,
+            insuranceFee,
+            distanceFee,
+            weightFee,
+            totalFee,
+          },
+        });
+      }
 
       // 创建路径（如果有）
       if (routeResult && routePoints && t_real !== undefined && targetStep !== undefined) {
@@ -851,6 +1132,731 @@ async function main() {
   for (const [logistics, count] of Array.from(logisticsStats.entries()).sort((a, b) => b[1] - a[1])) {
     console.log(`     ${logistics}: ${count} 个`);
   }
+
+  // 为已送达订单创建客户评价
+  console.log('\n⭐ 创建客户评价数据...');
+  const deliveredOrders = await prisma.order.findMany({
+    where: {
+      merchantId: merchant.id,
+      status: OrderStatus.DELIVERED,
+    },
+    take: 50, // 只为前50个已送达订单创建评价
+  });
+
+  let reviewCount = 0;
+  for (const order of deliveredOrders) {
+    if (Math.random() > 0.6) { // 40%的订单有评价
+      await prisma.customerReview.create({
+        data: {
+          orderId: order.id,
+          rating: Math.floor(Math.random() * 2) + 4, // 4-5分
+          comment: ['服务很好', '配送及时', '包装完好', '非常满意', '推荐'][Math.floor(Math.random() * 5)],
+          reviewerName: order.receiverName,
+          reviewerPhone: order.receiverPhone,
+        },
+      });
+      reviewCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${reviewCount} 条客户评价`);
+
+  // 创建异常订单记录
+  console.log('\n⚠️  创建异常订单记录...');
+  const exceptionOrders = await prisma.order.findMany({
+    where: {
+      merchantId: merchant.id,
+      status: { in: [OrderStatus.SHIPPING, OrderStatus.DELIVERED] },
+    },
+    take: 10,
+  });
+
+  let exceptionCount = 0;
+  const exceptionTypes = [ExceptionType.TIMEOUT, ExceptionType.LOST, ExceptionType.DAMAGED, ExceptionType.OTHER];
+  const handleStatuses = [ExceptionHandleStatus.PENDING, ExceptionHandleStatus.PROCESSING, ExceptionHandleStatus.RESOLVED];
+  
+  for (const order of exceptionOrders) {
+    if (Math.random() > 0.7) { // 30%的订单有异常
+      const exceptionType = exceptionTypes[Math.floor(Math.random() * exceptionTypes.length)];
+      const handleStatus = handleStatuses[Math.floor(Math.random() * handleStatuses.length)];
+      
+      await prisma.orderException.create({
+        data: {
+          orderId: order.id,
+          exceptionType,
+          description: {
+            [ExceptionType.TIMEOUT]: '配送超时',
+            [ExceptionType.LOST]: '包裹丢失',
+            [ExceptionType.DAMAGED]: '包裹损坏',
+            [ExceptionType.OTHER]: '其他异常',
+          }[exceptionType],
+          handlerName: handleStatus !== ExceptionHandleStatus.PENDING ? randomName() : null,
+          handleStatus,
+          handleTime: handleStatus !== ExceptionHandleStatus.PENDING ? new Date() : null,
+        },
+      });
+      exceptionCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${exceptionCount} 条异常订单记录`);
+
+  // 创建订单历史数据
+  console.log('\n📜 创建订单历史数据...');
+  const ordersWithHistory = await prisma.order.findMany({
+    where: {
+      merchantId: merchant.id,
+      status: { in: [OrderStatus.SHIPPING, OrderStatus.DELIVERED] },
+    },
+    take: 50,
+  });
+  let historyCount = 0;
+  for (const order of ordersWithHistory) {
+    // 模拟状态变更历史：PENDING -> SHIPPING -> DELIVERED
+    await prisma.orderHistory.create({
+      data: {
+        orderId: order.id,
+        oldStatus: OrderStatus.PENDING,
+        newStatus: OrderStatus.SHIPPING,
+        changedBy: 'system',
+        changeReason: '订单已发货',
+        changedAt: new Date(order.createdAt.getTime() + Math.random() * 24 * 60 * 60 * 1000),
+      },
+    });
+    historyCount++;
+    if (order.status === OrderStatus.DELIVERED) {
+      await prisma.orderHistory.create({
+        data: {
+          orderId: order.id,
+          oldStatus: OrderStatus.SHIPPING,
+          newStatus: OrderStatus.DELIVERED,
+          changedBy: order.deliveryDriverId ? 'driver' : 'system',
+          changeReason: '订单已送达',
+          changedAt: order.actualTime || new Date(),
+        },
+      });
+      historyCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${historyCount} 条订单历史记录`);
+
+  // 创建费用结算数据
+  console.log('\n💰 创建费用结算数据...');
+  const startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const endDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const settledOrders = await prisma.order.findMany({
+    where: {
+      merchantId: merchant.id,
+      status: OrderStatus.DELIVERED,
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    take: 20,
+  });
+  if (settledOrders.length > 0) {
+    const totalAmount = settledOrders.reduce((sum, o) => sum + (o.totalFee || 0), 0);
+    const settlement = await prisma.feeSettlement.create({
+      data: {
+        merchantId: merchant.id,
+        settlementNo: `SETTLE${Date.now()}`,
+        startDate,
+        endDate,
+        totalAmount,
+        settledAmount: totalAmount * 0.8, // 已结算80%
+        status: SettlementStatus.SETTLING,
+      },
+    });
+    for (const order of settledOrders) {
+      if (order.totalFee && order.totalFee > 0) {
+        await prisma.feeSettlementDetail.create({
+          data: {
+            settlementId: settlement.id,
+            orderId: order.id,
+            feeType: FeeType.BASE_FEE,
+            amount: order.totalFee * 0.4, // 假设基础运费占40%
+          },
+        });
+        await prisma.feeSettlementDetail.create({
+          data: {
+            settlementId: settlement.id,
+            orderId: order.id,
+            feeType: FeeType.DISTANCE_FEE,
+            amount: order.totalFee * 0.3, // 距离费占30%
+          },
+        });
+      }
+    }
+    console.log(`✅ 已创建 1 个费用结算单，包含 ${settledOrders.length} 个订单的明细`);
+  }
+
+  // 创建配送员排班数据
+  console.log('\n📅 创建配送员排班数据...');
+  const shiftTypes = [ShiftType.MORNING, ShiftType.AFTERNOON, ShiftType.NIGHT];
+  let scheduleCount = 0;
+  for (let day = 0; day < 7; day++) {
+    const workDate = new Date(now.getTime() - day * 24 * 60 * 60 * 1000);
+    for (const driver of drivers) {
+      if (Math.random() > 0.3) { // 70%概率有排班
+        const shiftType = shiftTypes[Math.floor(Math.random() * shiftTypes.length)];
+        await prisma.driverSchedule.create({
+          data: {
+            driverId: driver.id,
+            workDate,
+            shiftType,
+            startTime: shiftType === ShiftType.MORNING ? '08:00' : shiftType === ShiftType.AFTERNOON ? '14:00' : '20:00',
+            endTime: shiftType === ShiftType.MORNING ? '14:00' : shiftType === ShiftType.AFTERNOON ? '20:00' : '02:00',
+            status: Math.random() > 0.5 ? ScheduleStatus.CHECKED_IN : ScheduleStatus.SCHEDULED,
+          },
+        });
+        scheduleCount++;
+      }
+    }
+  }
+  console.log(`✅ 已创建 ${scheduleCount} 条配送员排班记录`);
+
+  // 创建车辆维修记录数据
+  console.log('\n🔧 创建车辆维修记录数据...');
+  const maintenanceTypes = [MaintenanceType.MAINTENANCE, MaintenanceType.REPAIR, MaintenanceType.INSPECTION];
+  let maintenanceCount = 0;
+  for (const vehicle of vehicles) {
+    if (Math.random() > 0.5) { // 50%概率有维修记录
+      const maintenanceType = maintenanceTypes[Math.floor(Math.random() * maintenanceTypes.length)];
+      const maintenanceDate = new Date(now.getTime() - Math.random() * 180 * 24 * 60 * 60 * 1000); // 过去180天内
+      await prisma.vehicleMaintenance.create({
+        data: {
+          vehicleId: vehicle.id,
+          maintenanceType,
+          maintenanceDate,
+          cost: Math.random() * 5000 + 500, // 500-5500元
+          description: `${maintenanceType === MaintenanceType.MAINTENANCE ? '定期保养' : maintenanceType === MaintenanceType.REPAIR ? '故障维修' : '年检'}记录`,
+          nextMaintenanceDate: maintenanceType === MaintenanceType.MAINTENANCE 
+            ? new Date(maintenanceDate.getTime() + 90 * 24 * 60 * 60 * 1000) 
+            : null,
+        },
+      });
+      maintenanceCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${maintenanceCount} 条车辆维修记录`);
+
+  // 创建仓库出入库记录数据
+  console.log('\n📦 创建仓库出入库记录数据...');
+  const transactionTypes = [TransactionType.IN, TransactionType.OUT, TransactionType.INVENTORY];
+  let transactionCount = 0;
+  for (const warehouse of warehouses) {
+    const warehouseOrders = await prisma.order.findMany({
+      where: {
+        warehouseId: warehouse.id,
+        status: { in: [OrderStatus.SHIPPING, OrderStatus.DELIVERED] },
+      },
+      take: 10,
+    });
+    for (const order of warehouseOrders) {
+      // 出库记录
+      await prisma.warehouseTransaction.create({
+        data: {
+          warehouseId: warehouse.id,
+          orderId: order.id,
+          transactionType: TransactionType.OUT,
+          quantity: Math.floor(Math.random() * 10) + 1,
+          operator: randomName(),
+          remark: `订单${order.orderNo}出库`,
+          transactionDate: order.createdAt,
+        },
+      });
+      transactionCount++;
+    }
+    // 随机创建一些入库和盘点记录
+    for (let i = 0; i < 5; i++) {
+      await prisma.warehouseTransaction.create({
+        data: {
+          warehouseId: warehouse.id,
+          transactionType: transactionTypes[Math.floor(Math.random() * transactionTypes.length)],
+          quantity: Math.floor(Math.random() * 20) + 1,
+          operator: randomName(),
+          remark: '库存调整',
+          transactionDate: new Date(now.getTime() - Math.random() * 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+      transactionCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${transactionCount} 条仓库出入库记录`);
+
+  // 创建配送员绩效统计数据
+  console.log('\n📊 创建配送员绩效统计数据...');
+  let statsCount = 0;
+  for (let day = 0; day < 7; day++) {
+    const statDate = new Date(now.getTime() - day * 24 * 60 * 60 * 1000);
+    for (const driver of drivers) {
+      const driverOrders = await prisma.order.findMany({
+        where: {
+          deliveryDriverId: driver.id,
+          status: OrderStatus.DELIVERED,
+          actualTime: {
+            gte: new Date(statDate.getTime()),
+            lt: new Date(statDate.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+      });
+      if (driverOrders.length > 0) {
+        const totalDistance = driverOrders.reduce((sum, o) => sum + (o.distance || 0), 0);
+        const totalIncome = driverOrders.reduce((sum, o) => sum + (o.totalFee || 0), 0);
+        await prisma.driverPerformanceStats.create({
+          data: {
+            driverId: driver.id,
+            statDate,
+            totalOrders: driverOrders.length,
+            completedOrders: driverOrders.length,
+            onTimeOrders: Math.floor(driverOrders.length * 0.8), // 80%准时
+            avgRating: driver.avgRating,
+            totalDistance,
+            totalIncome,
+          },
+        });
+        statsCount++;
+      }
+    }
+  }
+  console.log(`✅ 已创建 ${statsCount} 条配送员绩效统计记录`);
+
+  // 创建商家统计数据
+  console.log('\n📈 创建商家统计数据...');
+  let merchantStatsCount = 0;
+  for (let day = 0; day < 7; day++) {
+    const statDate = new Date(now.getTime() - day * 24 * 60 * 60 * 1000);
+    const dayOrders = await prisma.order.findMany({
+      where: {
+        merchantId: merchant.id,
+        createdAt: {
+          gte: new Date(statDate.getTime()),
+          lt: new Date(statDate.getTime() + 24 * 60 * 60 * 1000),
+        },
+      },
+    });
+    if (dayOrders.length > 0) {
+      const completedOrders = dayOrders.filter(o => o.status === OrderStatus.DELIVERED);
+      const totalAmount = dayOrders.reduce((sum, o) => sum + o.amount, 0);
+      const totalFee = dayOrders.reduce((sum, o) => sum + (o.totalFee || 0), 0);
+      const reviews = await prisma.customerReview.findMany({
+        where: {
+          orderId: { in: dayOrders.map(o => o.id) },
+        },
+      });
+      const avgRating = reviews.length > 0 
+        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+        : 0;
+      await prisma.merchantStatistics.create({
+        data: {
+          merchantId: merchant.id,
+          statDate,
+          totalOrders: dayOrders.length,
+          completedOrders: completedOrders.length,
+          totalAmount,
+          totalFee,
+          avgRating,
+        },
+      });
+      merchantStatsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${merchantStatsCount} 条商家统计记录`);
+
+  // ========== 第三阶段：新增表数据 ==========
+  
+  // 创建订单明细
+  console.log('\n📦 创建订单明细...');
+  const ordersWithItems = await prisma.order.findMany({
+    take: 50,
+    include: {
+      product: true,
+    },
+  });
+  let orderItemsCount = 0;
+  for (const order of ordersWithItems) {
+    if (order.productId) {
+      await prisma.orderItem.create({
+        data: {
+          orderId: order.id,
+          productId: order.productId,
+          quantity: order.productQuantity,
+          unitPrice: order.amount / order.productQuantity,
+          subtotal: order.amount,
+        },
+      });
+      orderItemsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${orderItemsCount} 条订单明细记录`);
+
+  // 创建配送任务
+  console.log('\n🚚 创建配送任务...');
+  const shippingOrders = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.SHIPPING, OrderStatus.DELIVERED] },
+      deliveryDriverId: { not: null },
+    },
+    take: 30,
+  });
+  let tasksCount = 0;
+  for (const order of shippingOrders) {
+    if (order.deliveryDriverId) {
+      await prisma.deliveryTask.create({
+        data: {
+          driverId: order.deliveryDriverId,
+          orderId: order.id,
+          taskType: TaskType.DELIVERY,
+          priority: Math.floor(Math.random() * 3),
+          status: order.status === OrderStatus.DELIVERED ? TaskStatus.COMPLETED : TaskStatus.IN_PROGRESS,
+          assignedAt: order.createdAt,
+          completedAt: order.status === OrderStatus.DELIVERED ? order.actualTime : null,
+        },
+      });
+      tasksCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${tasksCount} 条配送任务记录`);
+
+  // 创建配送时效承诺
+  console.log('\n⏰ 创建配送时效承诺...');
+  const ordersWithTime = await prisma.order.findMany({
+    where: {
+      estimatedTime: { not: null },
+    },
+    take: 40,
+  });
+  let promisesCount = 0;
+  for (const order of ordersWithTime) {
+    if (order.estimatedTime) {
+      const isOnTime = order.actualTime ? order.actualTime <= order.estimatedTime : null;
+      const delayMinutes = order.actualTime && order.estimatedTime
+        ? Math.max(0, Math.floor((order.actualTime.getTime() - order.estimatedTime.getTime()) / 60000))
+        : null;
+      await prisma.deliveryPromise.create({
+        data: {
+          orderId: order.id,
+          promisedDeliveryTime: order.estimatedTime,
+          actualDeliveryTime: order.actualTime,
+          isOnTime,
+          delayMinutes,
+        },
+      });
+      promisesCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${promisesCount} 条配送时效承诺记录`);
+
+  // 创建支付记录
+  console.log('\n💳 创建支付记录...');
+  const paidOrders = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.SHIPPING, OrderStatus.DELIVERED] },
+    },
+    take: 50,
+  });
+  let paymentsCount = 0;
+  const paymentMethods = [PaymentMethod.ALIPAY, PaymentMethod.WECHAT, PaymentMethod.BANK_CARD, PaymentMethod.BALANCE];
+  for (const order of paidOrders) {
+    const paymentMethod = paymentMethods[Math.floor(Math.random() * paymentMethods.length)];
+    const status = order.status === OrderStatus.DELIVERED ? PaymentStatus.SUCCESS : PaymentStatus.PENDING;
+    await prisma.payment.create({
+      data: {
+        orderId: order.id,
+        paymentMethod,
+        amount: order.amount,
+        status,
+        transactionId: `TXN${Date.now()}${Math.floor(Math.random() * 10000)}`,
+        paidAt: status === PaymentStatus.SUCCESS ? order.createdAt : null,
+      },
+    });
+    paymentsCount++;
+  }
+  console.log(`✅ 已创建 ${paymentsCount} 条支付记录`);
+
+  // 创建退款记录
+  console.log('\n💰 创建退款记录...');
+  const cancelledOrders = await prisma.order.findMany({
+    where: {
+      status: OrderStatus.CANCELLED,
+    },
+    take: 10,
+  });
+  let refundsCount = 0;
+  for (const order of cancelledOrders) {
+    const payment = await prisma.payment.findFirst({
+      where: { orderId: order.id },
+    });
+    if (payment && payment.status === PaymentStatus.SUCCESS) {
+      await prisma.refund.create({
+        data: {
+          orderId: order.id,
+          paymentId: payment.id,
+          refundAmount: payment.amount * 0.8, // 退款80%
+          refundReason: '订单取消',
+          status: RefundStatus.COMPLETED,
+          processedAt: new Date(order.updatedAt.getTime() + 3600000), // 1小时后处理
+        },
+      });
+      refundsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${refundsCount} 条退款记录`);
+
+  // 创建客户积分
+  console.log('\n🎁 创建客户积分...');
+  const allCustomers = await prisma.customer.findMany();
+  let pointsCount = 0;
+  for (const customer of allCustomers) {
+    const customerOrders = await prisma.order.findMany({
+      where: {
+        customerId: customer.id,
+        status: OrderStatus.DELIVERED,
+      },
+    });
+    if (customerOrders.length > 0) {
+      const totalPoints = Math.floor(customerOrders.reduce((sum, o) => sum + o.amount, 0));
+      const usedPoints = Math.floor(totalPoints * 0.2); // 已使用20%
+      await prisma.customerPoint.upsert({
+        where: { customerId: customer.id },
+        update: {
+          totalPoints,
+          usedPoints,
+          availablePoints: totalPoints - usedPoints,
+        },
+        create: {
+          customerId: customer.id,
+          totalPoints,
+          usedPoints,
+          availablePoints: totalPoints - usedPoints,
+        },
+      });
+      pointsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${pointsCount} 条客户积分记录`);
+
+  // 创建投诉建议
+  console.log('\n📝 创建投诉建议...');
+  const ordersForComplaint = await prisma.order.findMany({
+    where: {
+      status: { in: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] },
+      customerId: { not: null },
+    },
+    take: 15,
+  });
+  let complaintsCount = 0;
+  const complaintTypes = [ComplaintType.DELIVERY_DELAY, ComplaintType.DAMAGE, ComplaintType.WRONG_ITEM, ComplaintType.SERVICE, ComplaintType.OTHER];
+  for (const order of ordersForComplaint) {
+    if (order.customerId && Math.random() < 0.3) { // 30%的订单有投诉
+      const complaintType = complaintTypes[Math.floor(Math.random() * complaintTypes.length)];
+      const status = Math.random() < 0.5 ? ComplaintStatus.RESOLVED : ComplaintStatus.PENDING;
+      await prisma.complaint.create({
+        data: {
+          orderId: order.id,
+          customerId: order.customerId,
+          complaintType,
+          content: `关于订单${order.orderNo}的投诉：${complaintType === ComplaintType.DELIVERY_DELAY ? '配送延迟' : complaintType === ComplaintType.DAMAGE ? '商品损坏' : '服务问题'}`,
+          status,
+          handlerId: status === ComplaintStatus.RESOLVED ? merchant.id : null,
+          handledAt: status === ComplaintStatus.RESOLVED ? new Date() : null,
+        },
+      });
+      complaintsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${complaintsCount} 条投诉建议记录`);
+
+  // 创建优惠券
+  console.log('\n🎫 创建优惠券...');
+  let couponsCount = 0;
+  for (let i = 0; i < 10; i++) {
+    const couponType = Math.random() < 0.5 ? CouponType.FIXED_AMOUNT : CouponType.PERCENTAGE;
+    const validFrom = new Date(now.getTime() - Math.random() * 7 * 24 * 60 * 60 * 1000);
+    const validTo = new Date(validFrom.getTime() + (7 + Math.random() * 30) * 24 * 60 * 60 * 1000);
+    await prisma.coupon.create({
+      data: {
+        merchantId: merchant.id,
+        couponCode: `COUPON${Date.now()}${i}`,
+        couponType,
+        discountAmount: couponType === CouponType.FIXED_AMOUNT ? Math.floor(Math.random() * 100) + 10 : null,
+        discountPercent: couponType === CouponType.PERCENTAGE ? Math.floor(Math.random() * 30) + 5 : null,
+        minOrderAmount: Math.floor(Math.random() * 500) + 100,
+        maxDiscount: couponType === CouponType.PERCENTAGE ? Math.floor(Math.random() * 50) + 20 : null,
+        validFrom,
+        validTo,
+        usageLimit: Math.floor(Math.random() * 100) + 10,
+        usedCount: 0,
+        status: validTo > now ? CouponStatus.ACTIVE : CouponStatus.EXPIRED,
+      },
+    });
+    couponsCount++;
+  }
+  console.log(`✅ 已创建 ${couponsCount} 条优惠券记录`);
+
+  // 创建优惠券使用记录
+  console.log('\n🎟️ 创建优惠券使用记录...');
+  const activeCoupons = await prisma.coupon.findMany({
+    where: {
+      status: CouponStatus.ACTIVE,
+      usedCount: { lt: prisma.coupon.fields.usageLimit },
+    },
+    take: 5,
+  });
+  let couponUsagesCount = 0;
+  for (const coupon of activeCoupons) {
+    const ordersToUse = await prisma.order.findMany({
+      where: {
+        merchantId: coupon.merchantId,
+        customerId: { not: null },
+        status: OrderStatus.DELIVERED,
+      },
+      take: Math.min(3, coupon.usageLimit - coupon.usedCount),
+    });
+    for (const order of ordersToUse) {
+      if (order.customerId) {
+        let discountAmount = 0;
+        if (coupon.couponType === CouponType.FIXED_AMOUNT) {
+          discountAmount = coupon.discountAmount ?? 0;
+        } else if (coupon.couponType === CouponType.PERCENTAGE) {
+          discountAmount = order.amount * (coupon.discountPercent ?? 0) / 100;
+          if (coupon.maxDiscount) {
+            discountAmount = Math.min(discountAmount, coupon.maxDiscount);
+          }
+        }
+        await prisma.couponUsage.create({
+          data: {
+            couponId: coupon.id,
+            orderId: order.id,
+            customerId: order.customerId,
+            discountAmount,
+          },
+        });
+        await prisma.coupon.update({
+          where: { id: coupon.id },
+          data: { usedCount: { increment: 1 } },
+        });
+        couponUsagesCount++;
+      }
+    }
+  }
+  console.log(`✅ 已创建 ${couponUsagesCount} 条优惠券使用记录`);
+
+  // 创建库存预警
+  console.log('\n⚠️ 创建库存预警...');
+  const allWarehouses = await prisma.warehouse.findMany();
+  let alertsCount = 0;
+  for (const warehouse of allWarehouses) {
+    if (warehouse.currentStock <= warehouse.capacity * 0.2) {
+      const products = await prisma.product.findMany({
+        where: { merchantId: merchant.id },
+        take: 3,
+      });
+      for (const product of products) {
+        const alertLevel = warehouse.currentStock <= warehouse.capacity * 0.1 ? AlertLevel.CRITICAL : AlertLevel.LOW;
+        await prisma.inventoryAlert.create({
+          data: {
+            warehouseId: warehouse.id,
+            productId: product.id,
+            currentStock: warehouse.currentStock,
+            alertThreshold: alertLevel === AlertLevel.CRITICAL ? warehouse.capacity * 0.1 : warehouse.capacity * 0.2,
+            alertLevel,
+            isResolved: false,
+          },
+        });
+        alertsCount++;
+      }
+    }
+  }
+  console.log(`✅ 已创建 ${alertsCount} 条库存预警记录`);
+
+  // 创建路线优化记录
+  console.log('\n🗺️ 创建路线优化记录...');
+  const ordersWithRoute = await prisma.order.findMany({
+    where: {
+      distance: { not: null },
+    },
+    take: 20,
+  });
+  let optimizationsCount = 0;
+  for (const order of ordersWithRoute) {
+    if (order.distance) {
+      const originalDistance = order.distance;
+      const optimizedDistance = originalDistance * (0.85 + Math.random() * 0.1); // 优化后减少5-15%
+      const originalTime = Math.floor(originalDistance * 10); // 假设10分钟/公里
+      const optimizedTime = Math.floor(optimizedDistance * 10);
+      await prisma.routeOptimization.create({
+        data: {
+          orderId: order.id,
+          originalDistance,
+          optimizedDistance,
+          originalTime,
+          optimizedTime,
+          savedDistance: originalDistance - optimizedDistance,
+          savedTime: originalTime - optimizedTime,
+          optimizationAlgorithm: 'Dijkstra',
+        },
+      });
+      optimizationsCount++;
+    }
+  }
+  console.log(`✅ 已创建 ${optimizationsCount} 条路线优化记录`);
+
+  // 创建通知记录
+  console.log('\n🔔 创建通知记录...');
+  let notificationsCount = 0;
+  // 为商家创建通知
+  const merchantNotifications = [
+    { type: NotificationType.ORDER_STATUS, title: '新订单提醒', content: '您有新的订单待处理' },
+    { type: NotificationType.PAYMENT, title: '支付成功', content: '订单支付成功，请及时发货' },
+    { type: NotificationType.SYSTEM, title: '系统维护通知', content: '系统将于今晚进行维护' },
+  ];
+  for (const notif of merchantNotifications) {
+    await prisma.notification.create({
+      data: {
+        recipientId: merchant.id,
+        recipientType: RecipientType.MERCHANT,
+        notificationType: notif.type,
+        title: notif.title,
+        content: notif.content,
+        isRead: Math.random() < 0.5,
+      },
+    });
+    notificationsCount++;
+  }
+  // 为客户创建通知
+  const customersForNotif = await prisma.customer.findMany({ take: 10 });
+  for (const customer of customersForNotif) {
+    const customerOrders = await prisma.order.findMany({
+      where: { customerId: customer.id },
+      take: 2,
+    });
+    for (const order of customerOrders) {
+      await prisma.notification.create({
+        data: {
+          recipientId: customer.id,
+          recipientType: RecipientType.CUSTOMER,
+          notificationType: NotificationType.ORDER_STATUS,
+          title: `订单${order.orderNo}状态更新`,
+          content: `您的订单${order.orderNo}状态已更新为${order.status}`,
+          isRead: false,
+        },
+      });
+      notificationsCount++;
+    }
+  }
+  // 为配送员创建通知
+  const driversForNotif = await prisma.deliveryDriver.findMany({ take: 5 });
+  for (const driver of driversForNotif) {
+    await prisma.notification.create({
+      data: {
+        recipientId: driver.id,
+        recipientType: RecipientType.DRIVER,
+        notificationType: NotificationType.DELIVERY,
+        title: '新配送任务',
+        content: `您有新的配送任务待处理`,
+        isRead: false,
+      },
+    });
+    notificationsCount++;
+  }
+  console.log(`✅ 已创建 ${notificationsCount} 条通知记录`);
 
   console.log('\n🎉 数据填充完成！');
   console.log('\n📝 测试账号信息:');

@@ -1,5 +1,5 @@
 #!/bin/bash
-
+clear
 # 获取脚本所在目录（项目根目录）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -57,10 +57,19 @@ echo "✅ bcrypt 构建完成"
 echo ""
 
 # 阶段6: 重置数据库并启动服务
-echo "🗄️  [6/6] 重置数据库（删除所有数据，重新运行迁移和 seed）..."
-npx prisma migrate reset --force
+echo "🗄️  [6/6] 重置数据库（删除所有数据，直接同步 schema 和 seed）..."
+npx prisma db push --force-reset --accept-data-loss
 if [ $? -ne 0 ]; then
   echo "❌ 数据库重置失败"
+  exit 1
+fi
+echo "✅ 数据库结构同步完成"
+echo ""
+echo "🌱 运行 seed 脚本..."
+npx prisma db seed
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Seed 运行失败，请检查上面的错误信息"
   exit 1
 fi
 echo "✅ 数据库已重置并初始化完成"

@@ -59,14 +59,45 @@ export class OrdersController {
     @Query('status') status?: OrderStatus,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
+    @Query('deliveryDriverId') deliveryDriverId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('minFee') minFee?: string,
+    @Query('maxFee') maxFee?: string,
+    @Query('minWeight') minWeight?: string,
+    @Query('maxWeight') maxWeight?: string,
+    @Query('search') search?: string,
   ) {
-    return this.ordersService.findAll(req.user.userId, status, sortBy, sortOrder);
+    return this.ordersService.findAll(
+      req.user.userId,
+      status,
+      sortBy,
+      sortOrder,
+      deliveryDriverId,
+      warehouseId,
+      minFee ? parseFloat(minFee) : undefined,
+      maxFee ? parseFloat(maxFee) : undefined,
+      minWeight ? parseFloat(minWeight) : undefined,
+      maxWeight ? parseFloat(maxWeight) : undefined,
+      search,
+    );
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async findOne(@Param('id') id: string) {
     return this.ordersService.findOne(id);
+  }
+
+  @Get(':id/items')
+  @UseGuards(JwtAuthGuard)
+  async getOrderItems(@Param('id') id: string) {
+    return this.ordersService.findOrderItems(id);
+  }
+
+  @Get(':id/coupons')
+  @UseGuards(JwtAuthGuard)
+  async getCouponUsages(@Param('id') id: string) {
+    return this.ordersService.findCouponUsages(id);
   }
 
   @Patch(':id')

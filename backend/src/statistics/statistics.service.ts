@@ -204,5 +204,181 @@ export class StatisticsService {
 
     return statistics;
   }
+
+  /**
+   * 获取配送员绩效统计
+   */
+  async getDriverPerformance(driverId?: string) {
+    const performance = await this.prisma.queryDeliveryDriverPerformance(driverId);
+    return performance;
+  }
+
+  /**
+   * 获取仓库运营统计
+   */
+  async getWarehouseStatistics(warehouseId?: string) {
+    const inventory = await this.prisma.queryWarehouseInventory(warehouseId);
+    return inventory;
+  }
+
+  /**
+   * 获取异常订单分析
+   */
+  async getExceptionAnalysis(merchantId?: string) {
+    const where: any = {};
+    if (merchantId) {
+      where.order = {
+        merchantId,
+      };
+    }
+
+    const [total, byType, byStatus] = await Promise.all([
+      this.prisma.orderException.count({ where }),
+      this.prisma.orderException.groupBy({
+        by: ['exceptionType'],
+        where,
+        _count: {
+          exceptionType: true,
+        },
+      }),
+      this.prisma.orderException.groupBy({
+        by: ['handleStatus'],
+        where,
+        _count: {
+          handleStatus: true,
+        },
+      }),
+    ]);
+
+    // 计算平均处理时长（已解决的异常）
+    const resolvedExceptions = await this.prisma.orderException.findMany({
+      where: {
+        ...where,
+        handleStatus: 'RESOLVED',
+        handleTime: { not: null },
+      },
+      select: {
+        createdAt: true,
+        handleTime: true,
+      },
+    });
+
+    let avgHandleTimeHours = 0;
+    if (resolvedExceptions.length > 0) {
+      const totalHours = resolvedExceptions.reduce((sum, ex) => {
+        const hours = (ex.handleTime.getTime() - ex.createdAt.getTime()) / (1000 * 60 * 60);
+        return sum + hours;
+      }, 0);
+      avgHandleTimeHours = totalHours / resolvedExceptions.length;
+    }
+
+    return {
+      total,
+      byType: byType.reduce((acc, item) => {
+        acc[item.exceptionType] = item._count.exceptionType;
+        return acc;
+      }, {} as Record<string, number>),
+      byStatus: byStatus.reduce((acc, item) => {
+        acc[item.handleStatus] = item._count.handleStatus;
+        return acc;
+      }, {} as Record<string, number>),
+      avgHandleTimeHours: parseFloat(avgHandleTimeHours.toFixed(2)),
+    };
+  }
+
+  /**
+   * 获取费用统计分析
+   */
+  async getFeeStatistics(merchantId?: string, startDate?: Date, endDate?: Date) {
+    const where: any = {};
+    if (merchantId) {
+      where.order = {
+        merchantId,
+      };
+    }
+    if (startDate || endDate) {
+      where.order = {
+        ...where.order,
+        createdAt: {
+          ...(startDate ? { gte: startDate } : {}),
+          ...(endDate ? { lte: endDate } : {}),
+        },
+      };
+    }
+
+    const [totalFees, avgFee, byLogistics, feeBreakdown] = await Promise.all([
+      this.prisma.deliveryFee.aggregate({
+        where,
+        _sum: {
+          totalFee: true,
+          baseFee: true,
+          urgentFee: true,
+          insuranceFee: true,
+          distanceFee: true,
+          weightFee: true,
+        },
+      }),
+      this.prisma.deliveryFee.aggregate({
+        where,
+        _avg: {
+          totalFee: true,
+        },
+      }),
+      this.prisma.deliveryFee.findMany({
+        where,
+        include: {
+          order: {
+            select: {
+              logistics: true,
+            },
+          },
+        },
+      }),
+      this.prisma.deliveryFee.aggregate({
+        where,
+        _sum: {
+          baseFee: true,
+          urgentFee: true,
+          insuranceFee: true,
+          distanceFee: true,
+          weightFee: true,
+        },
+      }),
+    ]);
+
+    // 按物流公司分组统计
+    const logisticsStats = byLogistics.reduce((acc, fee) => {
+      const logistics = fee.order.logistics;
+      if (!acc[logistics]) {
+        acc[logistics] = {
+          totalFee: 0,
+          count: 0,
+          avgFee: 0,
+        };
+      }
+      acc[logistics].totalFee += fee.totalFee;
+      acc[logistics].count += 1;
+      return acc;
+    }, {} as Record<string, { totalFee: number; count: number; avgFee: number }>);
+
+    // 计算平均费用
+    Object.keys(logisticsStats).forEach((logistics) => {
+      logisticsStats[logistics].avgFee =
+        logisticsStats[logistics].totalFee / logisticsStats[logistics].count;
+    });
+
+    return {
+      totalFees: totalFees._sum.totalFee || 0,
+      avgFee: avgFee._avg.totalFee || 0,
+      feeBreakdown: {
+        baseFee: feeBreakdown._sum.baseFee || 0,
+        urgentFee: feeBreakdown._sum.urgentFee || 0,
+        insuranceFee: feeBreakdown._sum.insuranceFee || 0,
+        distanceFee: feeBreakdown._sum.distanceFee || 0,
+        weightFee: feeBreakdown._sum.weightFee || 0,
+      },
+      byLogistics: logisticsStats,
+    };
+  }
 }
 

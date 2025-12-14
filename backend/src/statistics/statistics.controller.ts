@@ -36,5 +36,56 @@ export class StatisticsController {
     const data = await this.statisticsService.getLogisticsStatistics(req.user.userId);
     return { success: true, data };
   }
+
+  /**
+   * 获取配送员绩效统计
+   * GET /statistics/drivers?driverId=xxx
+   */
+  @Get('drivers')
+  async getDriverPerformance(@Query('driverId') driverId?: string) {
+    const data = await this.statisticsService.getDriverPerformance(driverId);
+    return { success: true, data };
+  }
+
+  /**
+   * 获取仓库运营统计
+   * GET /statistics/warehouses?warehouseId=xxx
+   */
+  @Get('warehouses')
+  async getWarehouseStatistics(@Query('warehouseId') warehouseId?: string) {
+    const data = await this.statisticsService.getWarehouseStatistics(warehouseId);
+    return { success: true, data };
+  }
+
+  /**
+   * 获取异常订单分析
+   * GET /statistics/exceptions?merchantId=xxx
+   */
+  @Get('exceptions')
+  async getExceptionAnalysis(@Request() req, @Query('merchantId') merchantId?: string) {
+    const data = await this.statisticsService.getExceptionAnalysis(
+      merchantId || req.user.userId,
+    );
+    return { success: true, data };
+  }
+
+  /**
+   * 获取费用统计分析
+   * GET /statistics/fees?merchantId=xxx&startDate=xxx&endDate=xxx
+   */
+  @Get('fees')
+  async getFeeStatistics(
+    @Request() req,
+    @Query('merchantId') merchantId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.statisticsService.getFeeStatistics(
+      merchantId || req.user.userId,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+    return { success: true, data };
+  }
 }
 

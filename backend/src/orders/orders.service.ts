@@ -73,10 +73,59 @@ export class OrdersService {
     return order;
   }
 
-  async findAll(merchantId: string, status?: OrderStatus, sortBy?: string, sortOrder?: string) {
+  async findAll(
+    merchantId: string,
+    status?: OrderStatus,
+    sortBy?: string,
+    sortOrder?: string,
+    deliveryDriverId?: string,
+    warehouseId?: string,
+    minFee?: number,
+    maxFee?: number,
+    minWeight?: number,
+    maxWeight?: number,
+    search?: string,
+  ) {
     const where: any = { merchantId };
     if (status) {
       where.status = status;
+    }
+
+    if (deliveryDriverId) {
+      where.deliveryDriverId = deliveryDriverId;
+    }
+
+    if (warehouseId) {
+      where.warehouseId = warehouseId;
+    }
+
+    if (minFee !== undefined || maxFee !== undefined) {
+      where.totalFee = {};
+      if (minFee !== undefined) {
+        where.totalFee.gte = minFee;
+      }
+      if (maxFee !== undefined) {
+        where.totalFee.lte = maxFee;
+      }
+    }
+
+    if (minWeight !== undefined || maxWeight !== undefined) {
+      where.weight = {};
+      if (minWeight !== undefined) {
+        where.weight.gte = minWeight;
+      }
+      if (maxWeight !== undefined) {
+        where.weight.lte = maxWeight;
+      }
+    }
+
+    // 模糊搜索
+    if (search) {
+      where.OR = [
+        { orderNo: { contains: search, mode: 'insensitive' } },
+        { receiverName: { contains: search, mode: 'insensitive' } },
+        { productName: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     const orderBy: any = {};
@@ -91,6 +140,67 @@ export class OrdersService {
       orderBy,
       include: {
         route: true,
+        deliveryDriver: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            status: true,
+          },
+        },
+        warehouse: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+          },
+        },
+        deliveryFee: true,
+        reviews: {
+          take: 1,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  async findOrderItems(orderId: string) {
+    return this.prisma.orderItem.findMany({
+      where: { orderId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            category: true,
+            price: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async findCouponUsages(orderId: string) {
+    return this.prisma.couponUsage.findMany({
+      where: { orderId },
+      include: {
+        coupon: {
+          select: {
+            id: true,
+            couponCode: true,
+            couponType: true,
+            discountAmount: true,
+            discountPercent: true,
+          },
+        },
+        customer: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
   }
@@ -109,6 +219,25 @@ export class OrdersService {
             name: true,
             phone: true,
           },
+        },
+        deliveryDriver: {
+          include: {
+            vehicle: {
+              select: {
+                id: true,
+                plateNumber: true,
+                vehicleType: true,
+              },
+            },
+          },
+        },
+        warehouse: true,
+        deliveryFee: true,
+        reviews: {
+          orderBy: { createdAt: 'desc' },
+        },
+        exceptions: {
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
