@@ -105,7 +105,7 @@ const CreateOrderPage = () => {
 
     // 先检查是否在配送区域内
     const zone = checkDeliveryZoneByCoords(lng, lat)
-    
+
     // 如果不在配送区域内，直接返回错误，不进行逆地理编码
     if (!zone) {
       const location: Location = {

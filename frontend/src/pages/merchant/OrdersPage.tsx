@@ -55,7 +55,7 @@ const OrdersPage = () => {
     setLoading(true)
     try {
       let data: Order[] = []
-      
+
       // 如果选择了配送区域，使用区域筛选 API
       if (zoneFilter) {
         data = await zoneService.getZoneOrders(zoneFilter)
@@ -67,11 +67,11 @@ const OrdersPage = () => {
         // 没有选择区域，使用原来的订单列表 API
         data = await orderService.getOrders({ status: statusFilter })
       }
-      
+
       if (!Array.isArray(data)) {
         throw new Error(`订单数据格式错误: 期望数组，实际得到 ${typeof data}. 数据: ${JSON.stringify(data)}`)
       }
-      
+
       // 按状态优先级排序：运输中 > 待发货 > 已取消 > 已送达
       // 相同状态内按创建时间倒序（最新的在前）
       data.sort((a, b) => {
@@ -82,7 +82,7 @@ const OrdersPage = () => {
         // 相同状态，按创建时间倒序
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       })
-      
+
       setOrders(data)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '加载订单失败'

@@ -49,7 +49,7 @@ function randomAmount(): number {
     { min: 5000, max: 10000, weight: 0.15 }, // 中高价值 15%
     { min: 10000, max: 50000, weight: 0.1 }, // 高价值 10%
   ];
-  
+
   const rand = Math.random();
   let cumulative = 0;
   for (const range of ranges) {
@@ -180,14 +180,14 @@ class RouteQueue {
       for (const step of path.steps) {
         // 获取当前步骤的耗时（秒）
         const stepDuration = step.duration ? Number(step.duration) : 0;
-        
+
         if (step.polyline) {
           const polylinePoints = step.polyline.split(';');
           const pointsInStep = polylinePoints.length;
-          
+
           // 如果步骤有多个点，将耗时平均分配到每个点
           const timePerPoint = pointsInStep > 0 ? stepDuration / pointsInStep : 0;
-          
+
           for (let i = 0; i < polylinePoints.length; i++) {
             const point = polylinePoints[i];
             if (!point || point.trim() === '') {
@@ -584,13 +584,13 @@ async function main() {
   const vehicles = [];
   const vehicleTypes = [VehicleType.SMALL_TRUCK, VehicleType.LARGE_TRUCK, VehicleType.ELECTRIC];
   const vehicleStatuses = [VehicleStatus.AVAILABLE, VehicleStatus.AVAILABLE, VehicleStatus.AVAILABLE, VehicleStatus.MAINTENANCE];
-  
+
   for (let i = 0; i < 8; i++) {
     const vehicle = await prisma.vehicle.create({
       data: {
         plateNumber: `京${['A', 'B', 'C', 'D', 'E'][Math.floor(Math.random() * 5)]}${Math.floor(Math.random() * 10000).toString().padStart(5, '0')}`,
         vehicleType: vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)],
-        loadCapacity: vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)] === VehicleType.LARGE_TRUCK ? 
+        loadCapacity: vehicleTypes[Math.floor(Math.random() * vehicleTypes.length)] === VehicleType.LARGE_TRUCK ?
           Math.random() * 5 + 5 : Math.random() * 3 + 1, // 大货车5-10吨，其他1-4吨
         status: vehicleStatuses[Math.floor(Math.random() * vehicleStatuses.length)],
         purchaseDate: new Date(Date.now() - Math.random() * 5 * 365 * 24 * 60 * 60 * 1000), // 0-5年前购买
@@ -656,7 +656,7 @@ async function main() {
   console.log('👤 创建配送员数据...');
   const drivers = [];
   const driverStatuses = [DriverStatus.IDLE, DriverStatus.IDLE, DriverStatus.DELIVERING, DriverStatus.RESTING];
-  
+
   for (let i = 0; i < 12; i++) {
     const vehicle = vehicles[Math.floor(Math.random() * vehicles.length)];
     const driver = await prisma.deliveryDriver.create({
@@ -736,7 +736,7 @@ async function main() {
   for (const zoneData of deliveryZones) {
     const [centerLng, centerLat] = zoneData.center;
     const range = zoneData.range;
-    
+
     const boundary = {
       type: 'Polygon',
       coordinates: [
@@ -848,7 +848,7 @@ async function main() {
   // 按状态生成订单
   for (const [status, count] of Object.entries(statusDistribution)) {
     const orderStatus = status as OrderStatus;
-    
+
     for (let i = 0; i < count; i++) {
       // 随机选择配送区域
       const zoneIndex = Math.floor(Math.random() * deliveryZones.length);
@@ -863,6 +863,48 @@ async function main() {
       // 随机选择物流公司
       const logistics = logisticsCompanies[Math.floor(Math.random() * logisticsCompanies.length)];
 
+      // 随机选择客户和客户地址（提前选择，用于确定finalDestination）
+      const customer = customers[Math.floor(Math.random() * customers.length)];
+      const customerAddresses = await prisma.customerAddress.findMany({
+        where: { customerId: customer.id },
+      });
+      const customerAddress = customerAddresses.length > 0
+        ? customerAddresses[Math.floor(Math.random() * customerAddresses.length)]
+        : null;
+
+      // 检查customerAddress的坐标是否在当前配送区域内
+      // 如果不在，则使用生成的destLng和destLat
+      let finalDestination: { lng: number; lat: number; address: string };
+      let useCustomerAddress = false;
+      if (customerAddress && customerAddress.address) {
+        const addr = customerAddress.address as any;
+        if (addr.lng && addr.lat) {
+          // 检查坐标是否在当前配送区域内
+          const addrLng = addr.lng;
+          const addrLat = addr.lat;
+          // 判断是否在区域内（简单的矩形判断，因为配送区域是正方形）
+          if (addrLng >= centerLng - zone.range && addrLng <= centerLng + zone.range &&
+              addrLat >= centerLat - zone.range && addrLat <= centerLat + zone.range) {
+            // 在区域内，使用customerAddress
+            finalDestination = {
+              lng: addrLng,
+              lat: addrLat,
+              address: addr.address || `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+            };
+            useCustomerAddress = true;
+          }
+        }
+      }
+
+      // 如果customerAddress不在区域内或不存在，使用生成的坐标
+      if (!useCustomerAddress) {
+        finalDestination = {
+          lng: destLng,
+          lat: destLat,
+          address: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+        };
+      }
+
       // 根据状态设置额外字段
       let currentLocation: { lng: number; lat: number } | undefined;
       let actualTime: Date | undefined;
@@ -876,8 +918,8 @@ async function main() {
       if (orderStatus === OrderStatus.SHIPPING) {
         // 运输中：需要先获取路径和时间数组，然后根据进度计算创建时间
         // 使用路径队列服务获取真实路径和时间数组（带限流和重试）
-        routeResult = await generateRoutePoints([origin.lng, origin.lat], [destLng, destLat]);
-        
+        routeResult = await generateRoutePoints([origin.lng, origin.lat], [finalDestination.lng, finalDestination.lat]);
+
         // 计算时间数组（与 OrdersService.ship 方法相同的逻辑）
         const { points, timeArray: t0 } = routeResult;
         routePoints = points;
@@ -887,14 +929,14 @@ async function main() {
         const factor = 0.85 + Math.random() * (1.2 - 0.85);
         // t_real = t_esti * factor
         t_real = t_esti.map((t) => t * factor);
-        
+
         // 计算总配送时间（秒，实际配送时间）
         const totalDeliveryTime = t_real[t_real.length - 1];
-        
+
         // 时间加速倍率：与 SimulatorService.SPEED_FACTOR 保持一致
         // 1秒演示时间 = 900秒实际配送时间
         const SPEED_FACTOR = 900;
-        
+
         // 计算创建时间，使得当前进度为 0%～30%
         // progress = elapsedDeliveryTime / totalDeliveryTime
         // elapsedDeliveryTime = elapsedSeconds * SPEED_FACTOR
@@ -903,11 +945,11 @@ async function main() {
         const maxElapsedSeconds = 0.3 * totalDeliveryTime / SPEED_FACTOR;
         const elapsedSeconds = Math.random() * maxElapsedSeconds;
         createdAt = new Date(now.getTime() - elapsedSeconds * 1000);
-        
+
         // 计算预计送达时间
         const estimatedTimeSeconds = t_esti[t_esti.length - 1];
         estimatedTime = new Date(createdAt.getTime() + estimatedTimeSeconds * 1000);
-        
+
         // 计算当前位置（基于已过时间）
         const elapsedDeliveryTime = elapsedSeconds * SPEED_FACTOR;
         targetStep = 0;
@@ -926,8 +968,8 @@ async function main() {
       } else if (orderStatus === OrderStatus.DELIVERED) {
         // 已送达：当前位置在终点，有实际送达时间
         // 使用路径队列服务获取真实路径和时间数组（带限流和重试）
-        routeResult = await generateRoutePoints([origin.lng, origin.lat], [destLng, destLat]);
-        
+        routeResult = await generateRoutePoints([origin.lng, origin.lat], [finalDestination.lng, finalDestination.lat]);
+
         // 计算时间数组（与 OrdersService.ship 方法相同的逻辑）
         const { points, timeArray: t0 } = routeResult;
         routePoints = points;
@@ -937,21 +979,21 @@ async function main() {
         const factor = 0.85 + Math.random() * (1.2 - 0.85);
         // t_real = t_esti * factor
         t_real = t_esti.map((t) => t * factor);
-        
+
         // 已送达订单：创建时间应该是配送完成之前
         // 随机生成创建时间（过去30天内）
         const daysAgo = Math.random() * 30;
         createdAt = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-        
+
         // 计算预计送达时间
         const estimatedTimeSeconds = t_esti[t_esti.length - 1];
         estimatedTime = new Date(createdAt.getTime() + estimatedTimeSeconds * 1000);
-        
+
         // 实际送达时间：预计时间 + 随机延迟（0-2小时）
         const deliveryDelay = Math.random() * 2 * 60 * 60 * 1000;
         actualTime = new Date(estimatedTime.getTime() + deliveryDelay);
-        
-        currentLocation = { lng: destLng, lat: destLat };
+
+        currentLocation = { lng: finalDestination.lng, lat: finalDestination.lat };
         targetStep = routePoints.length - 1; // 已送达，在终点
       } else if (orderStatus === OrderStatus.CANCELLED) {
         // 已取消：没有当前位置和路径
@@ -978,30 +1020,22 @@ async function main() {
       const orderNo = `ORD${createdAt.getTime()}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
 
       // 随机分配配送员和仓库（仅对已发货和已送达的订单）
-      const deliveryDriver = (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED) 
-        ? drivers[Math.floor(Math.random() * drivers.length)] 
+      const deliveryDriver = (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED)
+        ? drivers[Math.floor(Math.random() * drivers.length)]
         : null;
       const warehouse = (orderStatus === OrderStatus.SHIPPING || orderStatus === OrderStatus.DELIVERED)
         ? warehouses[Math.floor(Math.random() * warehouses.length)]
         : null;
 
-      // 随机选择客户和客户地址
-      const customer = customers[Math.floor(Math.random() * customers.length)];
-      const customerAddresses = await prisma.customerAddress.findMany({
-        where: { customerId: customer.id },
-      });
-      const customerAddress = customerAddresses.length > 0 
-        ? customerAddresses[Math.floor(Math.random() * customerAddresses.length)]
-        : null;
 
       // 随机选择商品
       const product = products[Math.floor(Math.random() * products.length)];
 
-      // 计算重量和距离
+      // 计算重量和距离（使用finalDestination）
       const weight = Math.random() * 20 + 0.5; // 0.5-20.5 kg
       const distance = Math.sqrt(
-        Math.pow((destLng - origin.lng) * 111, 2) + 
-        Math.pow((destLat - origin.lat) * 111, 2)
+        Math.pow((finalDestination.lng - origin.lng) * 111, 2) +
+        Math.pow((finalDestination.lat - origin.lat) * 111, 2)
       ); // 粗略计算距离（km）
 
       // 计算费用
@@ -1019,18 +1053,14 @@ async function main() {
           orderNo,
           merchantId: merchant.id,
           status: orderStatus,
-          receiverName: customerAddress?.receiverName || randomName(),
-          receiverPhone: customerAddress?.receiverPhone || randomPhone(),
-          receiverAddress: customerAddress ? (customerAddress.address as any).address : `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
+          receiverName: useCustomerAddress && customerAddress ? customerAddress.receiverName : randomName(),
+          receiverPhone: useCustomerAddress && customerAddress ? customerAddress.receiverPhone : randomPhone(),
+          receiverAddress: useCustomerAddress && customerAddress ? (customerAddress.address as any).address : finalDestination.address,
           productName: product.name,
           productQuantity: Math.floor(Math.random() * 3) + 1,
           amount: randomAmount(),
           origin,
-          destination: customerAddress ? customerAddress.address : {
-            lng: destLng,
-            lat: destLat,
-            address: `${zone.name.replace('配送区', '')}${['区', '街道', '路', '街'][Math.floor(Math.random() * 4)]}${Math.floor(Math.random() * 100)}号`,
-          },
+          destination: finalDestination,
           currentLocation,
           logistics: logistics.name,
           estimatedTime,
@@ -1101,7 +1131,7 @@ async function main() {
   // 统计各配送区域和物流公司的订单数
   const zoneStats = new Map<string, number>();
   const logisticsStats = new Map<string, number>();
-  
+
   const allOrders = await prisma.order.findMany({
     where: { merchantId: merchant.id, status: OrderStatus.DELIVERED },
     select: { destination: true, logistics: true },
@@ -1173,12 +1203,12 @@ async function main() {
   let exceptionCount = 0;
   const exceptionTypes = [ExceptionType.TIMEOUT, ExceptionType.LOST, ExceptionType.DAMAGED, ExceptionType.OTHER];
   const handleStatuses = [ExceptionHandleStatus.PENDING, ExceptionHandleStatus.PROCESSING, ExceptionHandleStatus.RESOLVED];
-  
+
   for (const order of exceptionOrders) {
     if (Math.random() > 0.7) { // 30%的订单有异常
       const exceptionType = exceptionTypes[Math.floor(Math.random() * exceptionTypes.length)];
       const handleStatus = handleStatuses[Math.floor(Math.random() * handleStatuses.length)];
-      
+
       await prisma.orderException.create({
         data: {
           orderId: order.id,
@@ -1326,8 +1356,8 @@ async function main() {
           maintenanceDate,
           cost: Math.random() * 5000 + 500, // 500-5500元
           description: `${maintenanceType === MaintenanceType.MAINTENANCE ? '定期保养' : maintenanceType === MaintenanceType.REPAIR ? '故障维修' : '年检'}记录`,
-          nextMaintenanceDate: maintenanceType === MaintenanceType.MAINTENANCE 
-            ? new Date(maintenanceDate.getTime() + 90 * 24 * 60 * 60 * 1000) 
+          nextMaintenanceDate: maintenanceType === MaintenanceType.MAINTENANCE
+            ? new Date(maintenanceDate.getTime() + 90 * 24 * 60 * 60 * 1000)
             : null,
         },
       });
@@ -1440,8 +1470,8 @@ async function main() {
           orderId: { in: dayOrders.map(o => o.id) },
         },
       });
-      const avgRating = reviews.length > 0 
-        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+      const avgRating = reviews.length > 0
+        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
         : 0;
       await prisma.merchantStatistics.create({
         data: {
@@ -1460,7 +1490,7 @@ async function main() {
   console.log(`✅ 已创建 ${merchantStatsCount} 条商家统计记录`);
 
   // ========== 第三阶段：新增表数据 ==========
-  
+
   // 创建订单明细
   console.log('\n📦 创建订单明细...');
   const ordersWithItems = await prisma.order.findMany({
