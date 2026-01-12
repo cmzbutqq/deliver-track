@@ -44,21 +44,20 @@ def convert_mermaid_to_images(md_file, output_dir='pics/mermaid'):
 
         try:
             # 使用 mmdc 转换为 PNG（300 DPI 效果）
-            # 通过缩放因子和尺寸实现高分辨率
-            # -s 3: 缩放因子 3，相当于约 300 DPI 的效果
-            # -w 2400: 宽度 2400px
-            # -H 1600: 高度 1600px（自动调整，实际高度由内容决定）
+            # -s 3: 缩放因子 3，相当于约 300 DPI 的效果（96 DPI * 3 ≈ 288 DPI）
+            # -w 2400: 宽度 2400px（基础宽度 800 * 3）
+            # -H 1600: 高度 1600px（基础高度 533 * 3，自动调整）
             print(f"正在转换第 {i} 个图: {img_filename} (300 DPI)")
             result = subprocess.run(
                 ['mmdc', '-i', tmp_mmd, '-o', img_path,
                  '-w', '2400',           # 宽度 2400px
-                 '-H', '1600',           # 高度 1600px
+                 '-H', '1600',           # 高度 1600px（自动调整，实际高度由内容决定）
                  '-s', '3',              # 缩放因子 3（实现 300 DPI 效果）
                  '-b', 'white',          # 白色背景
                  '-t', 'default'],       # 默认主题
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60               # 增加超时时间，因为高分辨率转换需要更长时间
             )
 
             if result.returncode == 0:
