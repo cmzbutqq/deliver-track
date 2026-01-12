@@ -1,0 +1,1004 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// 用户角色枚举
+enum UserRole {
+  ADMIN // 系统管理员
+  MERCHANT // 商家
+  DRIVER // 配送员
+  WAREHOUSE_MANAGER // 仓库管理员
+  FINANCE // 财务人员
+}
+
+// 商家
+model Merchant {
+  id              String               @id @default(uuid())
+  username        String               @unique
+  passwordHash    String               @map("password_hash")
+  name            String?
+  phone           String?
+  address         Json? // 默认发货地址 { lng, lat, address }
+  businessLicense String?              @map("business_license") // 营业执照号
+  creditLevel     String?              @map("credit_level") // 信用等级: A/B/C/D
+  accountBalance  Float                @default(0) @map("account_balance") // 账户余额
+  role            UserRole             @default(MERCHANT) // 用户角色
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  orders          Order[]
+  deliveryZones   DeliveryZone[]
+  products        Product[]
+  settlements     FeeSettlement[]
+  statistics      MerchantStatistics[]
+  coupons         Coupon[]
+  handledComplaints Complaint[]
+
+  @@map("merchants")
+}
+
+// 客户
+model Customer {
+  id             String   @id @default(uuid())
+  name           String
+  phone          String   @unique
+  email          String?
+  idCard         String?  @map("id_card") // 身份证号
+  defaultAddress Json?    @map("default_address") // 默认地址 { lng, lat, address }
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  addresses     CustomerAddress[]
+  orders        Order[]
+  customerPoint CustomerPoint?
+  complaints    Complaint[]
+  couponUsages  CouponUsage[]
+
+  @@map("customers")
+}
+
+// 客户地址
+model CustomerAddress {
+  id            String   @id @default(uuid())
+  customerId    String   @map("customer_id")
+  receiverName  String   @map("receiver_name") // 收货人姓名
+  receiverPhone String   @map("receiver_phone") // 收货人电话
+  address       Json // 地址 { lng, lat, address }
+  isDefault     Boolean  @default(false) @map("is_default") // 是否默认地址
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orders   Order[]
+
+  @@map("customer_addresses")
+}
+
+// 订单状态枚举
+enum OrderStatus {
+  PENDING // 待发货
+  SHIPPING // 运输中
+  DELIVERED // 已送达
+  CANCELLED // 已取消
+}
+
+// 配送员状态枚举
+enum DriverStatus {
+  IDLE // 空闲
+  DELIVERING // 配送中
+  RESTING // 休息
+}
+
+// 车辆类型枚举
+enum VehicleType {
+  SMALL_TRUCK // 小货车
+  LARGE_TRUCK // 大货车
+  ELECTRIC // 电动车
+}
+
+// 车辆状态枚举
+enum VehicleStatus {
+  AVAILABLE // 可用
+  MAINTENANCE // 维修中
+  SCRAPPED // 报废
+}
+
+// 仓库状态枚举
+enum WarehouseStatus {
+  NORMAL // 正常
+  MAINTENANCE // 维护中
+}
+
+// 异常类型枚举
+enum ExceptionType {
+  TIMEOUT // 超时
+  LOST // 丢失
+  DAMAGED // 损坏
+  OTHER // 其他
+}
+
+// 异常处理状态枚举
+enum ExceptionHandleStatus {
+  PENDING // 待处理
+  PROCESSING // 处理中
+  RESOLVED // 已解决
+}
+
+// 商品状态枚举
+enum ProductStatus {
+  ON_SHELF // 上架
+  OFF_SHELF // 下架
+}
+
+// 供应商信用等级枚举
+enum SupplierCreditLevel {
+  A
+  B
+  C
+  D
+}
+
+// 供应商状态枚举
+enum SupplierStatus {
+  NORMAL // 正常
+  SUSPENDED // 暂停
+  BLACKLIST // 黑名单
+}
+
+// 配送路线状态枚举
+enum DeliveryRouteStatus {
+  ACTIVE // 启用
+  INACTIVE // 停用
+}
+
+// 班次类型枚举
+enum ShiftType {
+  MORNING // 早班
+  AFTERNOON // 中班
+  NIGHT // 晚班
+}
+
+// 排班状态枚举
+enum ScheduleStatus {
+  SCHEDULED // 已排班
+  CHECKED_IN // 已签到
+  CHECKED_OUT // 已签退
+}
+
+// 维修类型枚举
+enum MaintenanceType {
+  MAINTENANCE // 保养
+  REPAIR // 维修
+  INSPECTION // 年检
+}
+
+// 仓库交易类型枚举
+enum TransactionType {
+  IN // 入库
+  OUT // 出库
+  INVENTORY // 盘点
+  TRANSFER // 调拨
+}
+
+// 费用类型枚举
+enum FeeType {
+  BASE_FEE // 基础运费
+  URGENT_FEE // 加急费
+  INSURANCE_FEE // 保价费
+  DISTANCE_FEE // 距离费
+  WEIGHT_FEE // 重量费
+}
+
+// 结算状态枚举
+enum SettlementStatus {
+  PENDING // 待结算
+  SETTLING // 结算中
+  SETTLED // 已结算
+}
+
+// 任务类型枚举
+enum TaskType {
+  PICKUP // 取件
+  DELIVERY // 配送
+  RETURN // 退货
+}
+
+// 任务状态枚举
+enum TaskStatus {
+  PENDING // 待处理
+  IN_PROGRESS // 进行中
+  COMPLETED // 已完成
+  CANCELLED // 已取消
+}
+
+// 支付方式枚举
+enum PaymentMethod {
+  ALIPAY // 支付宝
+  WECHAT // 微信支付
+  BANK_CARD // 银行卡
+  BALANCE // 账户余额
+}
+
+// 支付状态枚举
+enum PaymentStatus {
+  PENDING // 待支付
+  SUCCESS // 支付成功
+  FAILED // 支付失败
+  REFUNDED // 已退款
+}
+
+// 退款状态枚举
+enum RefundStatus {
+  PENDING // 待处理
+  APPROVED // 已批准
+  REJECTED // 已拒绝
+  COMPLETED // 已完成
+}
+
+// 投诉类型枚举
+enum ComplaintType {
+  DELIVERY_DELAY // 配送延迟
+  DAMAGE // 商品损坏
+  WRONG_ITEM // 错发商品
+  SERVICE // 服务问题
+  OTHER // 其他
+}
+
+// 投诉状态枚举
+enum ComplaintStatus {
+  PENDING // 待处理
+  PROCESSING // 处理中
+  RESOLVED // 已解决
+  REJECTED // 已拒绝
+}
+
+// 优惠券类型枚举
+enum CouponType {
+  FIXED_AMOUNT // 固定金额
+  PERCENTAGE // 百分比折扣
+}
+
+// 优惠券状态枚举
+enum CouponStatus {
+  ACTIVE // 激活
+  INACTIVE // 未激活
+  EXPIRED // 已过期
+}
+
+// 预警级别枚举
+enum AlertLevel {
+  LOW // 低库存
+  CRITICAL // 严重缺货
+}
+
+// 接收者类型枚举
+enum RecipientType {
+  MERCHANT // 商家
+  CUSTOMER // 客户
+  DRIVER // 配送员
+  ADMIN // 管理员
+}
+
+// 通知类型枚举
+enum NotificationType {
+  ORDER_STATUS // 订单状态
+  PAYMENT // 支付
+  DELIVERY // 配送
+  SYSTEM // 系统通知
+}
+
+// 订单
+model Order {
+  id                String      @id @default(uuid())
+  orderNo           String      @unique
+  status            OrderStatus @default(PENDING)
+  merchantId        String      @map("merchant_id")
+  // 收货人信息
+  receiverName      String      @map("receiver_name")
+  receiverPhone     String      @map("receiver_phone")
+  receiverAddress   String      @map("receiver_address")
+  // 商品信息
+  productName       String      @map("product_name")
+  productQuantity   Int         @map("product_quantity")
+  amount            Float
+  // 地理位置 (存储为 JSON)
+  origin            Json // { lng, lat, address }
+  destination       Json // { lng, lat, address }
+  currentLocation   Json?       @map("current_location") // { lng, lat }
+  // 时效信息
+  estimatedTime     DateTime?   @map("estimated_time") // 预计送达时间
+  actualTime        DateTime?   @map("actual_time") // 实际送达时间
+  // 物流公司
+  logistics         String      @default("顺丰速运")
+  // 扩展字段
+  deliveryDriverId  String?     @map("delivery_driver_id") // 配送员ID
+  warehouseId       String?     @map("warehouse_id") // 分拨中心ID
+  customerId        String?     @map("customer_id") // 客户ID
+  customerAddressId String?     @map("customer_address_id") // 客户地址ID
+  productId         String?     @map("product_id") // 商品ID
+  insuranceAmount   Float?      @map("insurance_amount") // 保价金额
+  urgentFee         Float?      @default(0) @map("urgent_fee") // 加急费
+  totalFee          Float?      @map("total_fee") // 总费用
+  weight            Float? // 重量，单位: kg
+  distance          Float?      @default(0) // 配送距离，单位: km
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  merchant              Merchant               @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  deliveryDriver        DeliveryDriver?        @relation(fields: [deliveryDriverId], references: [id], onDelete: SetNull)
+  warehouse             Warehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  customer              Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerAddress       CustomerAddress?       @relation(fields: [customerAddressId], references: [id], onDelete: SetNull)
+  product               Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+  route                 Route?
+  timeline              LogisticsTimeline[]
+  reviews               CustomerReview[]
+  exceptions            OrderException[]
+  deliveryFee           DeliveryFee?
+  history               OrderHistory[]
+  settlementDetails     FeeSettlementDetail[]
+  warehouseTransactions WarehouseTransaction[]
+  orderItems            OrderItem[]
+  deliveryTasks         DeliveryTask[]
+  deliveryPromises      DeliveryPromise[]
+  payments              Payment[]
+  refunds              Refund[]
+  complaints            Complaint[]
+  couponUsages         CouponUsage[]
+  routeOptimizations    RouteOptimization[]
+
+  @@map("orders")
+}
+
+// 配送区域
+model DeliveryZone {
+  id         String   @id @default(uuid())
+  name       String
+  merchantId String   @map("merchant_id")
+  // 多边形边界 (存储为 GeoJSON)
+  boundary   Json // { type: "Polygon", coordinates: [[[lng, lat], ...]] }
+  // 物流公司
+  logistics  String   @default("顺丰速运")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  merchant    Merchant             @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  zoneDrivers DeliveryZoneDriver[]
+
+  @@map("delivery_zones")
+}
+
+// 轨迹缓存
+model Route {
+  id          String   @id @default(uuid())
+  orderId     String   @unique @map("order_id")
+  // 路径点数组 (存储为 JSON)
+  points      Json // [[lng, lat], [lng, lat], ...]
+  // 时间数组 (存储为 JSON) - t_real数组，单位：秒
+  timeArray   Json?    @map("time_array") // [t_real[0], t_real[1], ...]
+  // 当前步骤索引
+  currentStep Int      @default(0) @map("current_step")
+  // 总步数
+  totalSteps  Int      @map("total_steps")
+  // 每步间隔 (毫秒) - 保留用于向后兼容，但不再使用
+  interval    Int      @default(5000)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("routes")
+}
+
+// 物流时间线
+model LogisticsTimeline {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  status      String // 状态描述，如 "已揽收"、"运输中"、"派送中"、"已签收"
+  description String // 详细描述
+  location    String? // 位置信息
+  timestamp   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([timestamp])
+  @@index([orderId, timestamp])
+  @@map("logistics_timeline")
+}
+
+// 物流公司
+model LogisticsCompany {
+  id        String   @id @default(uuid())
+  name      String   @unique // 物流公司名称，如 "顺丰速运"
+  speed     Float // 配送速度系数 (0 < speed <= 1)，表示配送速度相对开车的比例，speed越小配送越慢
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("logistics_companies")
+}
+
+// 车辆
+model Vehicle {
+  id                  String        @id @default(uuid())
+  plateNumber         String        @unique @map("plate_number") // 车牌号
+  vehicleType         VehicleType   @map("vehicle_type") // 车辆类型
+  loadCapacity        Float         @map("load_capacity") // 载重能力，单位: 吨
+  status              VehicleStatus @default(AVAILABLE) // 状态
+  purchaseDate        DateTime?     @map("purchase_date") // 购买日期
+  lastMaintenanceDate DateTime?     @map("last_maintenance_date") // 最后维修日期
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  drivers      DeliveryDriver[]
+  maintenances VehicleMaintenance[]
+
+  @@map("vehicles")
+}
+
+// 仓库/分拨中心
+model Warehouse {
+  id           String          @id @default(uuid())
+  name         String // 仓库名称
+  address      Json // 地址 { lng, lat, address }
+  managerName  String          @map("manager_name") // 负责人姓名
+  managerPhone String          @map("manager_phone") // 负责人电话
+  capacity     Int // 容量
+  currentStock Int             @default(0) @map("current_stock") // 当前库存
+  status       WarehouseStatus @default(NORMAL) // 状态
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  orders          Order[]
+  routes          DeliveryRoute[]
+  transactions    WarehouseTransaction[]
+  inventoryAlerts InventoryAlert[]
+
+  @@map("warehouses")
+}
+
+// 配送员
+model DeliveryDriver {
+  id              String       @id @default(uuid())
+  name            String // 姓名
+  phone           String // 电话
+  licenseNumber   String       @unique @map("license_number") // 驾驶证号
+  vehicleId       String?      @map("vehicle_id") // 车辆ID
+  status          DriverStatus @default(IDLE) // 状态
+  currentLocation Json?        @map("current_location") // 当前位置 { lng, lat }
+  totalOrders     Int          @default(0) @map("total_orders") // 完成订单数
+  avgRating       Float        @default(0) @map("avg_rating") // 平均评分
+  onTimeRate      Float        @default(0) @map("on_time_rate") // 准时率
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  vehicle     Vehicle?                 @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  orders      Order[]
+  zoneDrivers DeliveryZoneDriver[]
+  schedules   DriverSchedule[]
+  stats       DriverPerformanceStats[]
+  deliveryTasks DeliveryTask[]
+
+  @@map("delivery_drivers")
+}
+
+// 客户评价
+model CustomerReview {
+  id            String   @id @default(uuid())
+  orderId       String   @map("order_id")
+  rating        Int // 评分: 1-5
+  comment       String? // 评价内容
+  reviewerName  String   @map("reviewer_name") // 评价人姓名
+  reviewerPhone String?  @map("reviewer_phone") // 评价人电话
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("customer_reviews")
+}
+
+// 异常订单记录
+model OrderException {
+  id            String                @id @default(uuid())
+  orderId       String                @map("order_id")
+  exceptionType ExceptionType         @map("exception_type") // 异常类型
+  description   String // 异常描述
+  handlerName   String?               @map("handler_name") // 处理人
+  handleStatus  ExceptionHandleStatus @default(PENDING) @map("handle_status") // 处理状态
+  handleTime    DateTime?             @map("handle_time") // 处理时间
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_exceptions")
+}
+
+// 配送费用明细
+model DeliveryFee {
+  id           String   @id @default(uuid())
+  orderId      String   @unique @map("order_id")
+  baseFee      Float    @default(0) @map("base_fee") // 基础运费
+  urgentFee    Float    @default(0) @map("urgent_fee") // 加急费
+  insuranceFee Float    @default(0) @map("insurance_fee") // 保价费
+  distanceFee  Float    @default(0) @map("distance_fee") // 距离费
+  weightFee    Float    @default(0) @map("weight_fee") // 重量费
+  totalFee     Float    @default(0) @map("total_fee") // 总费用
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_fees")
+}
+
+// 商品
+model Product {
+  id          String        @id @default(uuid())
+  merchantId  String        @map("merchant_id")
+  name        String
+  sku         String // 商品编码
+  category    String? // 商品类别
+  weight      Float // 重量，单位: kg
+  volume      Float // 体积，单位: m³
+  price       Float // 单价
+  description String?       @db.Text // 商品描述
+  status      ProductStatus @default(ON_SHELF) // 状态
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  merchant        Merchant         @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  orders          Order[]
+  orderItems      OrderItem[]
+  inventoryAlerts InventoryAlert[]
+
+  @@unique([merchantId, sku]) // 每个商家内sku唯一
+  @@map("products")
+}
+
+// 更新Merchant模型，添加关联
+
+// 供应商
+model Supplier {
+  id           String              @id @default(uuid())
+  name         String              @unique
+  contactName  String              @map("contact_name") // 联系人姓名
+  contactPhone String              @map("contact_phone") // 联系电话
+  address      Json // 地址 { lng, lat, address }
+  creditLevel  SupplierCreditLevel @map("credit_level") // 信用等级
+  status       SupplierStatus      @default(NORMAL) // 状态
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  @@map("suppliers")
+}
+
+// 配送路线
+model DeliveryRoute {
+  id                String              @id @default(uuid())
+  name              String
+  warehouseId       String              @map("warehouse_id")
+  destinationRegion String              @map("destination_region") // 目标区域
+  distance          Float // 距离，单位: km
+  estimatedTime     Int                 @map("estimated_time") // 预计时长，单位: 小时
+  status            DeliveryRouteStatus @default(ACTIVE) // 状态
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_routes")
+}
+
+// 配送区域-配送员关联表
+model DeliveryZoneDriver {
+  id         String   @id @default(uuid())
+  zoneId     String   @map("zone_id")
+  driverId   String   @map("driver_id")
+  priority   Int      @default(0) // 优先级
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  zone   DeliveryZone   @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  driver DeliveryDriver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_zone_drivers")
+}
+
+// 订单历史
+model OrderHistory {
+  id           String       @id @default(uuid())
+  orderId      String       @map("order_id")
+  oldStatus    OrderStatus? @map("old_status") // 原状态
+  newStatus    OrderStatus  @map("new_status") // 新状态
+  changedBy    String       @map("changed_by") // 变更人
+  changeReason String?      @map("change_reason") // 变更原因
+  changedAt    DateTime     @default(now()) @map("changed_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([changedAt])
+  @@map("order_history")
+}
+
+// 费用结算
+model FeeSettlement {
+  id            String           @id @default(uuid())
+  merchantId    String           @map("merchant_id")
+  settlementNo  String           @unique @map("settlement_no") // 结算单号
+  startDate     DateTime         @map("start_date")
+  endDate       DateTime         @map("end_date")
+  totalAmount   Float            @default(0) @map("total_amount") // 总金额
+  settledAmount Float            @default(0) @map("settled_amount") // 已结算金额
+  status        SettlementStatus @default(PENDING) // 状态
+  settledAt     DateTime?        @map("settled_at") // 结算时间
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  merchant Merchant              @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  details  FeeSettlementDetail[]
+
+  @@map("fee_settlements")
+}
+
+// 费用结算明细
+model FeeSettlementDetail {
+  id           String   @id @default(uuid())
+  settlementId String   @map("settlement_id")
+  orderId      String   @map("order_id")
+  feeType      FeeType  @map("fee_type") // 费用类型
+  amount       Float // 金额
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  settlement FeeSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("fee_settlement_details")
+}
+
+// 配送员排班
+model DriverSchedule {
+  id        String         @id @default(uuid())
+  driverId  String         @map("driver_id")
+  workDate  DateTime       @map("work_date") @db.Date
+  shiftType ShiftType      @map("shift_type") // 班次类型
+  startTime String         @map("start_time") // 开始时间 (HH:mm格式)
+  endTime   String         @map("end_time") // 结束时间 (HH:mm格式)
+  status    ScheduleStatus @default(SCHEDULED) // 状态
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  driver DeliveryDriver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, workDate, shiftType])
+  @@map("driver_schedules")
+}
+
+// 车辆维修记录
+model VehicleMaintenance {
+  id                  String          @id @default(uuid())
+  vehicleId           String          @map("vehicle_id")
+  maintenanceType     MaintenanceType @map("maintenance_type") // 维修类型
+  maintenanceDate     DateTime        @map("maintenance_date")
+  cost                Float // 费用
+  description         String?         @db.Text // 维修描述
+  nextMaintenanceDate DateTime?       @map("next_maintenance_date") // 下次维修日期
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@map("vehicle_maintenances")
+}
+
+// 仓库出入库记录
+model WarehouseTransaction {
+  id              String          @id @default(uuid())
+  warehouseId     String          @map("warehouse_id")
+  orderId         String?         @map("order_id")
+  transactionType TransactionType @map("transaction_type") // 交易类型
+  quantity        Int // 数量
+  operator        String // 操作人
+  remark          String?         @db.Text // 备注
+  transactionDate DateTime        @default(now()) @map("transaction_date")
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([warehouseId])
+  @@index([transactionDate])
+  @@map("warehouse_transactions")
+}
+
+// 配送员绩效统计
+model DriverPerformanceStats {
+  id              String   @id @default(uuid())
+  driverId        String   @map("driver_id")
+  statDate        DateTime @map("stat_date") @db.Date
+  totalOrders     Int      @default(0) @map("total_orders") // 当日订单数
+  completedOrders Int      @default(0) @map("completed_orders") // 完成订单数
+  onTimeOrders    Int      @default(0) @map("on_time_orders") // 准时订单数
+  avgRating       Float    @default(0) @map("avg_rating") // 平均评分
+  totalDistance   Float    @default(0) @map("total_distance") // 总配送距离
+  totalIncome     Float    @default(0) @map("total_income") // 总收入
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  driver DeliveryDriver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, statDate])
+  @@map("driver_performance_stats")
+}
+
+// 商家统计
+model MerchantStatistics {
+  id              String   @id @default(uuid())
+  merchantId      String   @map("merchant_id")
+  statDate        DateTime @map("stat_date") @db.Date
+  totalOrders     Int      @default(0) @map("total_orders") // 订单总数
+  completedOrders Int      @default(0) @map("completed_orders") // 完成订单数
+  totalAmount     Float    @default(0) @map("total_amount") // 总金额
+  totalFee        Float    @default(0) @map("total_fee") // 总费用
+  avgRating       Float    @default(0) @map("avg_rating") // 平均评分
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@unique([merchantId, statDate])
+  @@map("merchant_statistics")
+}
+
+// 订单明细
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String   @map("order_id")
+  productId String   @map("product_id")
+  quantity  Int // 数量
+  unitPrice Float    @map("unit_price") // 单价
+  subtotal  Float // 小计
+  createdAt DateTime @default(now()) @map("created_at")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+// 配送任务
+model DeliveryTask {
+  id          String     @id @default(uuid())
+  driverId    String     @map("driver_id")
+  orderId     String     @map("order_id")
+  taskType    TaskType   @map("task_type") // 任务类型
+  priority    Int        @default(0) // 优先级
+  status      TaskStatus @default(PENDING)
+  assignedAt  DateTime?  @map("assigned_at")
+  completedAt DateTime?  @map("completed_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  driver DeliveryDriver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  order  Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([orderId])
+  @@index([status])
+  @@map("delivery_tasks")
+}
+
+// 配送时效承诺
+model DeliveryPromise {
+  id                  String    @id @default(uuid())
+  orderId             String    @map("order_id")
+  promisedDeliveryTime DateTime @map("promised_delivery_time") // 承诺送达时间
+  actualDeliveryTime  DateTime? @map("actual_delivery_time") // 实际送达时间
+  isOnTime            Boolean?  @map("is_on_time") // 是否准时
+  delayMinutes        Int?      @map("delay_minutes") // 延迟分钟数
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("delivery_promises")
+}
+
+// 支付记录
+model Payment {
+  id            String        @id @default(uuid())
+  orderId       String        @map("order_id")
+  paymentMethod PaymentMethod @map("payment_method") // 支付方式
+  amount        Float // 支付金额
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       @unique @map("transaction_id") // 交易号
+  paidAt        DateTime?     @map("paid_at") // 支付时间
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds Refund[]
+
+  @@index([orderId])
+  @@index([status])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// 退款记录
+model Refund {
+  id            String       @id @default(uuid())
+  orderId       String       @map("order_id")
+  paymentId     String       @map("payment_id")
+  refundAmount  Float        @map("refund_amount") // 退款金额
+  refundReason  String?      @map("refund_reason") @db.Text // 退款原因
+  status        RefundStatus @default(PENDING)
+  processedAt   DateTime?    @map("processed_at") // 处理时间
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([status])
+  @@map("refunds")
+}
+
+// 客户积分
+model CustomerPoint {
+  id             String   @id @default(uuid())
+  customerId     String   @unique @map("customer_id")
+  totalPoints    Int      @default(0) @map("total_points") // 总积分
+  usedPoints     Int      @default(0) @map("used_points") // 已使用积分
+  availablePoints Int     @default(0) @map("available_points") // 可用积分
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("customer_points")
+}
+
+// 投诉建议
+model Complaint {
+  id          String          @id @default(uuid())
+  orderId     String          @map("order_id")
+  customerId  String          @map("customer_id")
+  complaintType ComplaintType @map("complaint_type") // 投诉类型
+  content     String          @db.Text // 投诉内容
+  status      ComplaintStatus @default(PENDING)
+  handlerId   String?         @map("handler_id") // 处理人ID
+  handledAt  DateTime?       @map("handled_at") // 处理时间
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  handler  Merchant? @relation(fields: [handlerId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
+  @@map("complaints")
+}
+
+// 优惠券
+model Coupon {
+  id              String      @id @default(uuid())
+  merchantId      String      @map("merchant_id")
+  couponCode      String      @unique @map("coupon_code") // 优惠券代码
+  couponType      CouponType  @map("coupon_type") // 优惠券类型
+  discountAmount  Float?      @map("discount_amount") // 折扣金额（固定金额类型）
+  discountPercent Float?      @map("discount_percent") // 折扣百分比（百分比类型）
+  minOrderAmount  Float?      @map("min_order_amount") // 最低订单金额
+  maxDiscount     Float?      @map("max_discount") // 最大折扣金额
+  validFrom       DateTime    @map("valid_from") // 有效期开始
+  validTo         DateTime    @map("valid_to") // 有效期结束
+  usageLimit      Int         @default(1) @map("usage_limit") // 使用次数限制
+  usedCount       Int         @default(0) @map("used_count") // 已使用次数
+  status          CouponStatus @default(ACTIVE)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  merchant     Merchant      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  couponUsages CouponUsage[]
+
+  @@index([merchantId])
+  @@index([couponCode])
+  @@index([status])
+  @@map("coupons")
+}
+
+// 优惠券使用记录
+model CouponUsage {
+  id            String   @id @default(uuid())
+  couponId      String   @map("coupon_id")
+  orderId       String   @map("order_id")
+  customerId    String   @map("customer_id")
+  discountAmount Float   @map("discount_amount") // 实际折扣金额
+  usedAt        DateTime @default(now()) @map("used_at")
+
+  coupon   Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([couponId])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("coupon_usages")
+}
+
+// 库存预警
+model InventoryAlert {
+  id            String     @id @default(uuid())
+  warehouseId   String     @map("warehouse_id")
+  productId     String     @map("product_id")
+  currentStock  Int        @map("current_stock") // 当前库存
+  alertThreshold Int       @map("alert_threshold") // 预警阈值
+  alertLevel    AlertLevel @map("alert_level") // 预警级别
+  isResolved    Boolean    @default(false) @map("is_resolved") // 是否已解决
+  resolvedAt    DateTime?  @map("resolved_at") // 解决时间
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseId])
+  @@index([productId])
+  @@index([isResolved])
+  @@map("inventory_alerts")
+}
+
+// 路线优化记录
+model RouteOptimization {
+  id                  String   @id @default(uuid())
+  orderId             String   @map("order_id")
+  originalDistance    Float    @map("original_distance") // 原始距离
+  optimizedDistance   Float    @map("optimized_distance") // 优化后距离
+  originalTime        Int      @map("original_time") // 原始时间（分钟）
+  optimizedTime       Int      @map("optimized_time") // 优化后时间（分钟）
+  savedDistance       Float    @map("saved_distance") // 节省距离
+  savedTime           Int       @map("saved_time") // 节省时间（分钟）
+  optimizationAlgorithm String? @map("optimization_algorithm") // 优化算法
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("route_optimizations")
+}
+
+// 通知记录
+model Notification {
+  id              String           @id @default(uuid())
+  recipientId     String           @map("recipient_id") // 接收者ID
+  recipientType   RecipientType    @map("recipient_type") // 接收者类型
+  notificationType NotificationType @map("notification_type") // 通知类型
+  title           String // 标题
+  content         String           @db.Text // 内容
+  isRead          Boolean          @default(false) @map("is_read") // 是否已读
+  readAt          DateTime?        @map("read_at") // 阅读时间
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([recipientId, recipientType])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}

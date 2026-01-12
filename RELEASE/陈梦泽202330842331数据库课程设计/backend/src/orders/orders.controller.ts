@@ -1,0 +1,140 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
+import { OrdersService } from './orders.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OrderStatus } from '@prisma/client';
+import { CreateOrderDto, UpdateOrderDto, ShipOrderDto } from './dto/order.dto';
+import { BatchOperationDto } from './dto/batch-operation.dto';
+
+@Controller('orders')
+export class OrdersController {
+  constructor(private ordersService: OrdersService) {}
+
+  @Post()
+  @UseGuards(JwtAuthGuard)
+  async create(@Request() req, @Body() dto: CreateOrderDto) {
+    return this.ordersService.create(req.user.userId, dto);
+  }
+
+  @Post('batch/ship')
+  @UseGuards(JwtAuthGuard)
+  async batchShip(@Request() req, @Body() dto: BatchOperationDto) {
+    const result = await this.ordersService.batchShip(
+      req.user.userId,
+      dto.orderIds,
+    );
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  @Delete('batch')
+  @UseGuards(JwtAuthGuard)
+  async batchDelete(@Request() req, @Body() dto: BatchOperationDto) {
+    const result = await this.ordersService.batchDelete(
+      req.user.userId,
+      dto.orderIds,
+    );
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async findAll(
+    @Request() req,
+    @Query('status') status?: OrderStatus,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+    @Query('deliveryDriverId') deliveryDriverId?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('minFee') minFee?: string,
+    @Query('maxFee') maxFee?: string,
+    @Query('minWeight') minWeight?: string,
+    @Query('maxWeight') maxWeight?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.ordersService.findAll(
+      req.user.userId,
+      status,
+      sortBy,
+      sortOrder,
+      deliveryDriverId,
+      warehouseId,
+      minFee ? parseFloat(minFee) : undefined,
+      maxFee ? parseFloat(maxFee) : undefined,
+      minWeight ? parseFloat(minWeight) : undefined,
+      maxWeight ? parseFloat(maxWeight) : undefined,
+      search,
+    );
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  async findOne(@Param('id') id: string) {
+    return this.ordersService.findOne(id);
+  }
+
+  @Get(':id/items')
+  @UseGuards(JwtAuthGuard)
+  async getOrderItems(@Param('id') id: string) {
+    return this.ordersService.findOrderItems(id);
+  }
+
+  @Get(':id/coupons')
+  @UseGuards(JwtAuthGuard)
+  async getCouponUsages(@Param('id') id: string) {
+    return this.ordersService.findCouponUsages(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  async update(@Param('id') id: string, @Request() req, @Body() dto: UpdateOrderDto) {
+    return this.ordersService.update(id, req.user.userId, dto);
+  }
+
+  @Post(':id/ship')
+  @UseGuards(JwtAuthGuard)
+  async ship(@Param('id') id: string, @Request() req, @Body() dto?: ShipOrderDto) {
+    return this.ordersService.ship(id, req.user.userId, dto);
+  }
+
+  @Post(':id/deliver')
+  @UseGuards(JwtAuthGuard)
+  async deliver(@Param('id') id: string) {
+    return this.ordersService.deliver(id);
+  }
+
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async delete(@Param('id') id: string, @Request() req) {
+    return this.ordersService.delete(id, req.user.userId);
+  }
+
+  @Get('activities/recent')
+  @UseGuards(JwtAuthGuard)
+  async getRecentActivities(@Request() req, @Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 100;
+    const activities = await this.ordersService.getRecentActivities(
+      req.user.userId,
+      limitNum,
+    );
+    return {
+      success: true,
+      data: activities,
+    };
+  }
+}

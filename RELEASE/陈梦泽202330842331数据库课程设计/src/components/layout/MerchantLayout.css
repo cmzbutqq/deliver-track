@@ -1,0 +1,81 @@
+.merchant-layout {
+  min-height: 100vh;
+}
+
+.merchant-sider {
+  background: #001529;
+}
+
+.merchant-sider .ant-menu {
+  background: #001529;
+  border-right: none;
+}
+
+.merchant-sider .ant-menu-item {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.merchant-sider .ant-menu-item:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.merchant-sider .ant-menu-item-selected {
+  color: #fff;
+  background: #1890ff;
+}
+
+.merchant-sider .ant-menu-item-selected:hover {
+  background: #40a9ff;
+}
+
+.merchant-sider .ant-menu-item-icon {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.merchant-sider .ant-menu-item-selected .ant-menu-item-icon {
+  color: #fff;
+}
+
+.logo {
+  height: 64px;
+  line-height: 64px;
+  text-align: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.merchant-header {
+  background: #fff;
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.merchant-name {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.merchant-content {
+  margin: 24px;
+  padding: 24px;
+  background: #fff;
+  min-height: calc(100vh - 112px);
+}
+
