@@ -61,4 +61,3 @@ coverage/
 *.tsbuildinfo
 .cache/
 .cursor/
-documents/
